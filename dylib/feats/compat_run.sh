@@ -32,9 +32,15 @@ case "$verb" in
 esac
 
 tool_dir=$(basename "$(dirname "$0")")
-case "$tool_dir" in
-  notproton-fex|*-fex) runner_link=fex ;;
-  *) runner_link=rosetta ;;
+case "$NOTPROTON_COMPAT_TOOL" in
+  notproton-fex) runner_link=fex ;;
+  notproton) runner_link=rosetta ;;
+  *)
+    case "$tool_dir" in
+      notproton-fex|*-fex) runner_link=fex ;;
+      *) runner_link=rosetta ;;
+    esac
+    ;;
 esac
 
 runners_root="$HOME/Library/Application Support/notproton/runners"
