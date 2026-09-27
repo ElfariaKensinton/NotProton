@@ -26,6 +26,8 @@
 #define COMPAT_TOOL_PRIORITY_OFF    0x38
 #define COMPAT_TOOL_DISPLAY_OFF     0x50
 
+#define NP_COMPAT_TOOL_NONE "notproton.none"
+
 // Tool entry fields at or past the insertion point. These are the baseline the
 // probed shift is measured against. Read live values through np_compat_tool_off.
 #define COMPAT_TOOL_INSTALL_OFF     0x58
