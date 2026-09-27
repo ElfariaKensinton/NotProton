@@ -229,7 +229,7 @@ struct PrefixToolsTests {
 
         func name(of word: String) throws -> String {
             let match = try #require(
-                source.firstMatch(of: try Regex("\(word\)\\) printf '([^']+)'")),
+                source.firstMatch(of: try Regex(#"\#(word)\) printf '([^']+)'"#)),
                 "compat_run.sh no longer names \(word)")
             return String(match[1].substring ?? "")
         }
