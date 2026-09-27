@@ -74,11 +74,15 @@ static void *hook_FindToolForTargetApp(void *self, uint32_t appid) {
     // return the first registered tool even when the per-app mapping points at the
     // other one, which makes the FEX dropdown selection silently launch Rosetta.
     np_compat_register_crossover(self);
-    const char *mapping = np_compat_app_mapping(self, appid);
+    const char *mapping = np_compat_recorded_selection(appid);
+    if (!mapping)
+        mapping = np_compat_app_mapping(self, appid);
+    if (!mapping)
+        mapping = np_compat_recorded_selection(0);
     if (mapping && (strcmp(mapping, "notproton") == 0 || strcmp(mapping, "notproton-fex") == 0)) {
         void *selected = np_compat_registered_tool_for_name(self, mapping);
         if (selected) {
-            NP_LOG("hook_FindToolForTargetApp: appID %u honoring explicit compatibility tool %s",
+            NP_LOG("hook_FindToolForTargetApp: appID %u honoring compatibility tool %s",
                    appid, mapping);
             return selected;
         }
@@ -121,6 +125,8 @@ static uint64_t hook_InternalSpecifyCompatTool(void *self, uint64_t appid,
     }
 
     uint64_t result = orig(self, appid, name, config, priority);
+    if (result)
+        np_compat_record_selection((uint32_t)appid, name);
     np_compatsvc_state_changed();
     return result;
 }
