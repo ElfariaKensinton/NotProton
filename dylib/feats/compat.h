@@ -113,9 +113,12 @@ void *np_compat_manager(void);
 // Manager-owned. Callers read fields without taking ownership.
 void *np_compat_registered_tool(void *compat_mgr);
 
-// Absolute path to the local CrossOver tool directory, or NULL. Resolved once
-// and cached.
+// Absolute path to the local Rosetta CrossOver tool directory.
 const char *np_compat_tool_dir(void);
+
+// Absolute path to a NotProton-owned compatibility tool directory, or NULL
+// when the name is not one of the registered tools.
+const char *np_compat_tool_install_for_name(const char *name);
 
 // Command line template for the tool's toolmanifest.vdf commandline value.
 const char *np_compat_tool_commandline(void);
