@@ -227,15 +227,13 @@ struct PrefixToolsTests {
     func dialogNamesBothBuilds() throws {
         let source = try Self.compatSource()
 
-        // Written in compat_run.sh as: aa64) printf 'the FEX build of CrossOver' ;;
         func name(of word: String) throws -> String {
             let match = try #require(
-                source.firstMatch(of: try Regex("\(word)\\) printf '([^']+)'")),
+                source.firstMatch(of: try Regex("\(word\)\\) printf '([^']+)'")),
                 "compat_run.sh no longer names \(word)")
             return String(match[1].substring ?? "")
         }
 
-        // The machine word each loader wants, taken from the rule rather than restated.
         func wanted(_ pattern: String) throws -> String {
             let match = try #require(source.firstMatch(of: try Regex(pattern)))
             return String(match[1].substring ?? "")
@@ -244,12 +242,10 @@ struct PrefixToolsTests {
         #expect(try name(of: wanted(#"aarch64-unix\) want=(\w+)"#)).contains("FEX"))
         #expect(try name(of: wanted(#"\*\) want=(\w+)"#)).contains("Rosetta"))
 
-        // A prefix that reads as 32 bit is neither build, so it gets no build name.
         let fallback = try #require(source.firstMatch(of: /\*\) printf '([^']+)'/))
         let vague = String(fallback.1)
         #expect(!vague.contains("FEX") && !vague.contains("Rosetta"))
 
-        // What made the prefix is named first and blamed, what is installed second.
         let built = try #require(source.range(of: #"$(tool_name "$have")"#))
         let installed = try #require(source.range(of: #"$(tool_name "$want")"#))
         #expect(built.lowerBound < installed.lowerBound)
@@ -265,20 +261,17 @@ struct PrefixToolsTests {
         #expect(!source[opening.lowerBound..<closing.lowerBound].contains("\n"))
     }
 
-    // Steam runs the tool twice for one launch and both passes reach the refusal, so an
-    // ungated alert shows twice. Only the alert is gated; the evaluator pass still has to stop.
-    @Test("Only the pass that launches the game shows the alert")
-    func alertSkipsTheEvaluatorPass() throws {
+    // A prefix mismatch must always ask before it opens NotProton for a rebuild.
+    @Test("A prefix mismatch asks for confirmation before rebuilding")
+    func alertConfirmsTheRebuild() throws {
         let source = try Self.compatSource()
-        let gate = try #require(source.range(of: #"if [ "$verb" != run ]; then"#))
         let alert = try #require(source.range(of: "display alert"))
-        let closing = try #require(
-            source.range(of: "  fi\n", range: alert.upperBound..<source.endIndex))
-        let refusal = try #require(source.range(of: "  exit 1\n"))
+        let refusal = try #require(source.range(of: #"  [ "$answer" = "rebuild" ] || {"#))
+        let request = try #require(source.range(of: #"open -g "$request_url""#))
 
-        #expect(gate.upperBound < alert.lowerBound)
-        #expect(alert.upperBound < closing.lowerBound)
-        #expect(closing.upperBound <= refusal.lowerBound)
+        #expect(alert.upperBound < refusal.lowerBound)
+        #expect(refusal.upperBound < request.lowerBound)
+        #expect(!source.contains(#"if [ "$verb" != run ]; then"#))
     }
 
     // Whichever unix tree the runner has decides the loader, and so decides the arch of
