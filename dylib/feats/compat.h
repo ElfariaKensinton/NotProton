@@ -112,6 +112,7 @@ void *np_compat_manager(void);
 // The registered CrossOver tool entry in the manager array, or NULL.
 // Manager-owned. Callers read fields without taking ownership.
 void *np_compat_registered_tool(void *compat_mgr);
+void *np_compat_registered_tool_for_name(void *compat_mgr, const char *name);
 
 // Absolute path to the local Rosetta CrossOver tool directory.
 const char *np_compat_tool_dir(void);
