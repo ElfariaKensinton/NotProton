@@ -55,6 +55,42 @@ for (const form of Object.keys(FORMS)) {
   t.ok(nodes('MTL_HUD_ENABLED=1').find(x => x.props.label === 'Metal HUD').props.checked === true,
        'a toggle reads as on from its argument');
 
+  const emptyEnv = nodes('').find(x => x.type === 'textarea');
+  t.ok(emptyEnv && emptyEnv.props.rows === 7 && emptyEnv.props.className === 'MSCXEnvText',
+       'compatibility settings contains a multiline environment editor');
+  t.ok(emptyEnv && emptyEnv.props.key === undefined,
+       'typing does not remount the environment editor');
+  t.ok(!walk(P({ details: details('', { unAppID: 0 }) })).some(x => x.type === 'textarea'),
+       'global Steam Compatibility settings do not show a per-game environment editor');
+
+  const savedEnv = 'DXVK_HUD=1\nWINEDEBUG=-all';
+  const envEditor = nodes('').find(x => x.type === 'textarea');
+  t.ok(!nodes('').some(x => x.type === 'button' && x.props.children === 'Save Environment Variables'),
+       'the environment editor has no save button');
+
+  written.length = 0;
+  envWritten.length = 0;
+  envEditor.props.onChange({ currentTarget: { value: savedEnv } });
+  t.ok(written.length === 0,
+       'editing the environment does not change launch options');
+  t.ok(envWritten.length === 1 &&
+       envWritten[0].appid === 287700 &&
+       envWritten[0].tool === 'notproton-env-v1:' + savedEnv,
+       'editing the environment writes through the compatibility service');
+
+  const existingEnv = nodes('').find(x => x.type === 'textarea');
+  t.ok(existingEnv && existingEnv.props.defaultValue === savedEnv,
+       'the editor restores the cached environment value');
+
+  written.length = 0;
+  envWritten.length = 0;
+  envEditor.props.onChange({ currentTarget: { value: '' } });
+  t.ok(written.length === 0,
+       'clearing the environment does not change launch options');
+  t.ok(envWritten.length === 1 &&
+       envWritten[0].tool === 'notproton-env-v1:',
+       'clearing the environment asks the native service to remove the file');
+
   nodes('CX_GRAPHICS_BACKEND=dxmt').filter(x => x.type === 'Dropdown')[1].props.onChange({ data: '2.0' });
   t.ok(last().includes('metalSpatialUpscaleFactor=2.0'), 'the upscaler writes its factor');
 

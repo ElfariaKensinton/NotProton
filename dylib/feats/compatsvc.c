@@ -1,5 +1,13 @@
 // CompatManager WebUI service.
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+
+#include "../util/file.h"
 
 #include "compatsvc.h"
 #include "compat.h"
@@ -64,6 +72,124 @@
 
 // Display label for the "no tool" entry.
 #define TOOL_NONE_LABEL "No Compatibility Tool"
+
+#define NP_ENV_PREFIX "notproton-env-v1:"
+#define NP_ENV_FILE  "notproton-environment"
+#define NP_ENV_MAX   (256 * 1024)
+
+static int mkdir_p(const char *path) {
+    char tmp[PATH_MAX];
+    size_t len = strlen(path);
+    if (!len || len >= sizeof tmp) return -1;
+    memcpy(tmp, path, len + 1);
+    for (size_t i = 1; i < len; i++) {
+        if (tmp[i] != '/') continue;
+        tmp[i] = '\0';
+        if (tmp[0] && mkdir(tmp, 0755) != 0 && errno != EEXIST)
+            return -1;
+        tmp[i] = '/';
+    }
+    if (mkdir(tmp, 0755) != 0 && errno != EEXIST)
+        return -1;
+    return 0;
+}
+
+static int find_library_root(uint32_t appid, char *out, size_t out_size) {
+    const char *home = np_home_dir();
+    if (!home) return -1;
+
+    char vdf[PATH_MAX];
+    int n = snprintf(vdf, sizeof vdf,
+                     "%s/Library/Application Support/Steam/steamapps/libraryfolders.vdf",
+                     home);
+    if (n < 0 || (size_t)n >= sizeof vdf) return -1;
+
+    FILE *f = fopen(vdf, "r");
+    if (!f) {
+        n = snprintf(out, out_size, "%s/Library/Application Support/Steam", home);
+        return n >= 0 && (size_t)n < out_size ? 0 : -1;
+    }
+
+    char file[1024 * 1024];
+    size_t used = fread(file, 1, sizeof file - 1, f);
+    fclose(f);
+    file[used] = '\0';
+
+    char app_key[32];
+    n = snprintf(app_key, sizeof app_key, "\"%u\"", appid);
+    if (n < 0 || (size_t)n >= sizeof app_key) return -1;
+
+    const char *scan = file;
+    while ((scan = strstr(scan, "\"path\"")) != NULL) {
+        const char *value = strchr(scan, '"');
+        value = value ? strchr(value + 1, '"') : NULL;
+        value = value ? strchr(value + 1, '"') : NULL;
+        if (!value) break;
+        value++;
+        const char *end = strchr(value, '"');
+        if (!end) break;
+
+        char library[PATH_MAX];
+        size_t lib_len = (size_t)(end - value);
+        if (lib_len == 0 || lib_len >= sizeof library) {
+            scan = end + 1;
+            continue;
+        }
+        memcpy(library, value, lib_len);
+        library[lib_len] = '\0';
+
+        const char *next_path = strstr(end + 1, "\"path\"");
+        const char *app = strstr(end + 1, app_key);
+        if (app && (!next_path || app < next_path)) {
+            n = snprintf(out, out_size, "%s", library);
+            return n >= 0 && (size_t)n < out_size ? 0 : -1;
+        }
+        scan = end + 1;
+    }
+
+    return -1;
+}
+static int save_environment_file(uint32_t appid, const char *text) {
+    if (!appid || !text || strlen(text) > NP_ENV_MAX)
+        return -1;
+
+    char library[PATH_MAX];
+    if (find_library_root(appid, library, sizeof library) != 0)
+        return -1;
+
+    char prefix[PATH_MAX];
+    int n = snprintf(prefix, sizeof prefix, "%s/steamapps/compatdata/%u", library, appid);
+    if (n < 0 || (size_t)n >= sizeof prefix || mkdir_p(prefix) != 0)
+        return -1;
+
+    char file[PATH_MAX];
+    char temp[PATH_MAX];
+    n = snprintf(file, sizeof file, "%s/%s", prefix, NP_ENV_FILE);
+    if (n < 0 || (size_t)n >= sizeof file) return -1;
+    n = snprintf(temp, sizeof temp, "%s.new.%d", file, getpid());
+    if (n < 0 || (size_t)n >= sizeof temp) return -1;
+
+    if (!text[0]) {
+        return unlink(file) == 0 || errno == ENOENT ? 0 : -1;
+    }
+
+    FILE *f = fopen(temp, "w");
+    if (!f) return -1;
+    if (fwrite(text, 1, strlen(text), f) != strlen(text) || fflush(f) != 0) {
+        fclose(f);
+        unlink(temp);
+        return -1;
+    }
+    if (fclose(f) != 0) {
+        unlink(temp);
+        return -1;
+    }
+    if (rename(temp, file) != 0) {
+        unlink(temp);
+        return -1;
+    }
+    return 0;
+}
 
 // Protobuf writer.
 typedef struct {
@@ -268,6 +394,16 @@ static int specify_compat_tool(uintptr_t request, uintptr_t response) {
                       ? *(const uint32_t *)(request + SPECIFY_APPID_OFF) : 0;
     const char *tool  = string_field(request + SPECIFY_TOOL_NAME_OFF);
     (void)response;
+
+    if (strncmp(tool, NP_ENV_PREFIX, strlen(NP_ENV_PREFIX)) == 0) {
+        const char *text = tool + strlen(NP_ENV_PREFIX);
+        if (save_environment_file(appid, text) != 0) {
+            NP_ERR("compatsvc: failed to save environment settings for app %u", appid);
+            return RESULT_FAIL;
+        }
+        NP_LOG("compatsvc: saved environment settings for app %u", appid);
+        return RESULT_OK;
+    }
 
     uint8_t *mgr = (uint8_t *)np_compat_manager();
     if (!mgr) {
