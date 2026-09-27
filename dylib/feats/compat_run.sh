@@ -724,7 +724,12 @@ else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
 set -- --args "$shim_exe" "$@"
-for name in $(env | sed -nE 's/^(Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
+# Keep Steam's full environment contract when the game is re-launched
+# through the macOS launcher bundle. In particular, Steam supplies additional
+# STEAM_COMPAT_* values that helpers may need later in the launch.
+# The old list only forwarded a few hard-coded compat variables, so the rest
+# disappeared at the launcher boundary.
+for name in $(env | sed -nE 's/^(Steam[A-Za-z0-9]*|STEAM_[A-Za-z0-9_]+|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\\1/p' | sort -u); do
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"
@@ -739,11 +744,6 @@ set -- \
   --env WINEPREFIX="$WINEPREFIX" \
   --env WINEDEBUG="$WINEDEBUG" \
   --env PATH="$PATH" \
-  --env STEAM_COMPAT_DATA_PATH="$STEAM_COMPAT_DATA_PATH" \
-  --env STEAM_COMPAT_INSTALL_PATH="$STEAM_COMPAT_INSTALL_PATH" \
-  --env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_COMPAT_CLIENT_INSTALL_PATH" \
-  --env STEAM_COMPAT_APP_ID="$STEAM_COMPAT_APP_ID" \
-  --env STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES" \
   --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
