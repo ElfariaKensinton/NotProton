@@ -69,16 +69,24 @@ export NOTPROTON_RUNNER_LINK="$runner_link"
 # cxcompatdb resolves its database through CX_HOME and logs an error for
 # every module loaded without it :(
 export CX_HOME="$HOME/Library/Application Support/CrossOver"
-wine_unix="$CX_ROOT/lib/wine/aarch64-unix"
-WINELOADER="$wine_unix/wine.app/Contents/MacOS/wine"
-WINESERVER="$CX_ROOT/CrossOver-Hosted Application/wineserver-arm64"
-if [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" ]; then
-  wine_unix="$CX_ROOT/lib/wine/x86_64-unix"
-  WINELOADER="$wine_unix/wine"
-  WINESERVER="$CX_ROOT/CrossOver-Hosted Application/wineserver"
-  [ -x "$WINESERVER" ] || WINESERVER="$CX_ROOT/CrossOver-Hosted Application/wineserver-x86"
-fi
+case "$runner_link" in
+  fex)
+    wine_unix="$CX_ROOT/lib/wine/aarch64-unix"
+    WINELOADER="$wine_unix/wine.app/Contents/MacOS/wine"
+    WINESERVER="$CX_ROOT/CrossOver-Hosted Application/wineserver-arm64"
+    ;;
+  rosetta)
+    wine_unix="$CX_ROOT/lib/wine/x86_64-unix"
+    WINELOADER="$wine_unix/wine"
+    WINESERVER="$CX_ROOT/CrossOver-Hosted Application/wineserver"
+    [ -x "$WINESERVER" ] || WINESERVER="$CX_ROOT/CrossOver-Hosted Application/wineserver-x86"
+    ;;
+  *) exit 1 ;;
+esac
 export WINELOADER WINESERVER
+if [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" ]; then
+  runner_missing=1
+fi
 export WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix"
 export PATH="$CX_ROOT/bin:$PATH"
 
