@@ -152,7 +152,8 @@ static void instrument_resolver_local_redirect(void *address, void *ctx_) {
     if (tool_appid == 0)
         return;
 
-    const char *tool_dir = np_compat_tool_dir();
+    const char *tool_name = *(const char *const *)(tool + COMPAT_TOOL_NAME_OFF);
+    const char *tool_dir = np_compat_tool_install_for_name(tool_name);
     if (!tool_dir)
         return;
 
