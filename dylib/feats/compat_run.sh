@@ -33,13 +33,63 @@ esac
 
 tool_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 tool_name=$(basename "$tool_dir")
-runner_link="current"
+runners_root="$HOME/Library/Application Support/notproton/runners"
+
 case "$tool_name" in
-  notproton) runner_link="rosetta" ;;
-  notproton-fex) runner_link="fex" ;;
+  notproton)
+    runner_link="rosetta"
+    requested_arch="x86_64-unix"
+    ;;
+  notproton-fex)
+    runner_link="fex"
+    requested_arch="aarch64-unix"
+    ;;
+  *)
+    echo "Unknown NotProton compatibility tool '$tool_name'." >&2
+    exit 1
+    ;;
 esac
 
-CX_ROOT="$HOME/Library/Application Support/notproton/runners/$runner_link"
+resolve_runner() {
+  current_target=$(readlink "$runners_root/current" 2>/dev/null || true)
+  current_build=${current_target%/CrossOver}
+  current_build=${current_build##*/}
+
+  if [ -n "$current_build" ] \
+      && [ -d "$runners_root/$current_build/CrossOver/lib/wine/$requested_arch" ]; then
+    case "$runner_link:$current_build" in
+      rosetta:crossover-*-fex) ;;
+      rosetta:crossover-*) printf '%s\n' "$runners_root/$current_build/CrossOver"; return 0 ;;
+      fex:crossover-*-fex) printf '%s\n' "$runners_root/$current_build/CrossOver"; return 0 ;;
+    esac
+  fi
+
+  best=""
+  for candidate in "$runners_root"/crossover-*; do
+    [ -d "$candidate" ] || continue
+    candidate_build=${candidate##*/}
+    [ -d "$candidate/CrossOver/lib/wine/$requested_arch" ] || continue
+
+    case "$runner_link:$candidate_build" in
+      rosetta:crossover-*-fex) continue ;;
+      rosetta:crossover-*) ;;
+      fex:crossover-*-fex) ;;
+      *) continue ;;
+    esac
+
+    if [ -z "$best" ] || [ "$candidate_build" \> "$best" ]; then
+      best="$candidate_build"
+    fi
+  done
+
+  [ -n "$best" ] || return 1
+  printf '%s\n' "$runners_root/$best/CrossOver"
+}
+
+CX_ROOT=$(resolve_runner) || {
+  echo "No $runner_link CrossOver runner is installed. Run NotProton and set up the corresponding compatibility tool." >&2
+  exit 1
+}
 export CX_ROOT
 # cxcompatdb resolves its database through CX_HOME and logs an error for
 # every module loaded without it :(
@@ -57,10 +107,6 @@ export WINELOADER WINESERVER
 export WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix"
 export PATH="$CX_ROOT/bin:$PATH"
 
-if [ "$runner_link" != "current" ] && [ ! -d "$CX_ROOT" ]; then
-  echo "CrossOver runner '$runner_link' is not configured. Run NotProton to set up the compatibility tool." >&2
-  exit 1
-fi
 
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   log="$STEAM_COMPAT_DATA_PATH/notproton-run.log"
