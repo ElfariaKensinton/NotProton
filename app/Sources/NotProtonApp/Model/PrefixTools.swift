@@ -41,6 +41,9 @@ enum PrefixTools {
         environment["WINEPREFIX"] = prefix.pfx.path(percentEncoded: false)
         environment["WINEMSYNC"] = syncBackend(prefix: prefix)
         environment["PATH"] = "\(root)/bin:" + (environment["PATH"] ?? "/usr/bin:/bin")
+        for (name, value) in PrefixEnvironmentStore.values(for: prefix) {
+            environment[name] = value
+        }
         return environment
     }
 
