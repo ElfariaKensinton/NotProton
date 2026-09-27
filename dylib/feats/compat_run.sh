@@ -247,6 +247,43 @@ migrate_user_paths() {
   done
 }
 
+load_prefix_environment() {
+  env_file="$STEAM_COMPAT_DATA_PATH/notproton-environment"
+  [ -r "$env_file" ] || return 0
+
+  while IFS= read -r env_line || [ -n "$env_line" ]; do
+    case "$env_line" in
+      ''|\#*) continue ;;
+    esac
+
+    case "$env_line" in
+      *=*) ;;
+      *)
+        echo "=== ignored invalid environment setting: $env_line ===" >> "$log" 2>&1 || true
+        continue
+        ;;
+    esac
+
+    env_name=${env_line%%=*}
+    env_value=${env_line#*=}
+    case "$env_name" in
+      ''|[0-9]*|*[!A-Za-z0-9_]*)
+        echo "=== ignored invalid environment name: $env_name ===" >> "$log" 2>&1 || true
+        continue
+        ;;
+    esac
+
+    case "$env_name" in
+      CX_ROOT|CX_HOME|PATH|WINELOADER|WINESERVER|WINEDLLPATH|WINEPREFIX|STEAM_COMPAT_DATA_PATH|STEAM_COMPAT_INSTALL_PATH|STEAM_COMPAT_APP_ID|STEAM_COMPAT_CLIENT_INSTALL_PATH|SteamAppId|SteamGameId)
+        echo "=== ignored managed environment name: $env_name ===" >> "$log" 2>&1 || true
+        continue
+        ;;
+    esac
+
+    export "$env_name=$env_value"
+  done < "$env_file"
+}
+
 lay_out_proton_profile() {
   users="$WINEPREFIX/drive_c/users"
   if [ -d "$users/crossover" ] && [ ! -L "$users/crossover" ]; then
@@ -278,6 +315,7 @@ lay_out_proton_profile() {
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   export WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx"
   mkdir -p "$WINEPREFIX"
+  load_prefix_environment
   msync_from=launch-options
   if [ -z "$WINEMSYNC" ] && [ -r "$STEAM_COMPAT_DATA_PATH/notproton-msync" ]; then
     WINEMSYNC=$(tr -d ' \t\n' \
