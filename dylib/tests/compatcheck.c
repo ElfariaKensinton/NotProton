@@ -288,7 +288,7 @@ static void installed_fn_cases(void) {
     check(np_compat_recorded_selection(42) == NULL,
           "clearing a selection removes the remembered tool");
 
-    mgr = build_manager(2, 0);
+    void *mgr = build_manager(2, 0);
     uint8_t *fex_entry = entries + np_compat_tool_stride();
     *(const char **)(entries + COMPAT_TOOL_NAME_OFF) = "notproton";
     *(const char **)(fex_entry + COMPAT_TOOL_NAME_OFF) = "notproton-fex";
