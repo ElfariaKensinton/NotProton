@@ -88,6 +88,11 @@ void np_compat_map_tool(void *mgr, uint32_t appid, const char *name) {
     last_map_tool = name;
 }
 
+void np_compat_record_selection(uint32_t appid, const char *name) {
+    (void)appid;
+    (void)name;
+}
+
 void np_compat_force_enable(void *mgr) { (void)mgr; }
 
 const char *np_compat_tool_dir(void) { return "/fake/tool"; }
