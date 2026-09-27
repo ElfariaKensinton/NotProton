@@ -99,10 +99,14 @@ void np_compat_map_tool(void *compat_mgr, uint32_t appid, const char *tool_name)
 // CCompatManager::YldRegisterTool, resolved at install time.
 void np_compat_set_register_fn(uintptr_t yld_register_tool);
 
-// Registers CrossOver into the given manager once. The local
-// compatibilitytools.d scan uses a different instance than the dropdown reads
-// and does not run on every launch, so this registers into the right one.
+// Registers the CrossOver compatibility tools into the given manager once.
+// The local compatibilitytools.d scan uses a different instance than the dropdown
+// reads and does not run on every launch, so this registers into the right one.
 void np_compat_register_crossover(void *compat_mgr);
+
+// Returns the local install path for a NotProton-owned compatibility tool name,
+// or NULL for an unknown tool.
+const char *np_compat_tool_install_for_name(const char *name);
 
 // The manager the properties page enumerates, or NULL before the first compat
 // query. Captured at registration, not construction (the compatibilitytools.d
