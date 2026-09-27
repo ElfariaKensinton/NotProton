@@ -234,7 +234,7 @@ struct PrefixToolsTests {
         let source = try Self.compatSource()
 
         #expect(source.contains("notproton-environment"))
-        #expect(source.contains("export "$env_name=$env_value""))
+        #expect(source.contains("export \"$env_name=$env_value\""))
         #expect(source.contains("WINEPREFIX|PATH"))
         #expect(source.contains("STEAM_COMPAT_DATA_PATH"))
     }
