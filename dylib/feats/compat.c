@@ -348,18 +348,30 @@ int np_compat_ensure_tool_manifest(void) {
 }
 
 static const char *np_compat_tool_dir_named(const char *name) {
-    static char dir[512];
+    static char dirs[2][512];
     const char *home = np_home_dir();
     if (!home || !name) return NULL;
 
-    snprintf(dir, sizeof(dir),
+    size_t slot;
+    if (strcmp(name, TOOL_DIR_NAME) == 0)
+        slot = 0;
+    else if (strcmp(name, TOOL_DIR_NAME_FEX) == 0)
+        slot = 1;
+    else
+        return NULL;
+
+    snprintf(dirs[slot], sizeof(dirs[slot]),
              "%s/Library/Application Support/Steam/compatibilitytools.d/%s",
              home, name);
-    return dir;
+    return dirs[slot];
 }
 
 const char *np_compat_tool_dir(void) {
     return np_compat_tool_dir_named(TOOL_DIR_NAME);
+}
+
+const char *np_compat_tool_install_for_name(const char *name) {
+    return np_compat_tool_dir_named(name);
 }
 
 const char *np_compat_tool_commandline(void) {
