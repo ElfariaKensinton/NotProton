@@ -413,6 +413,7 @@ static int specify_compat_tool(uintptr_t request, uintptr_t response) {
     }
 
     np_compat_map_tool(mgr, appid, tool);
+    np_compat_record_selection(appid, tool);
     NP_LOG("compatsvc: app %u now maps to %s", appid, *tool ? tool : "its default");
     return RESULT_OK;
 }
