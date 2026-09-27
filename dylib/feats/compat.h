@@ -12,8 +12,8 @@
 #define COMPAT_MANAGER_TOOL_COUNT_OFF  0x330
 #define COMPAT_TOOL_NAME_OFF           0x40
 
-// Sanity cap: the client ships one tool on macOS, so a count above this means
-// the offset moved and the array walk would read past the end.
+// Sanity cap: the client ships only a small compatibility tool set on macOS,
+// so a count above this means the offset moved and the array walk is unsafe.
 #define COMPAT_MANAGER_TOOLS_MAX       32
 
 // Platform bits GetValidPlatforms reports.
