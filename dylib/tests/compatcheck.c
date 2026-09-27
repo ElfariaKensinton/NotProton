@@ -272,6 +272,17 @@ static void installed_fn_cases(void) {
     check(strcmp(rosetta, fex) != 0, "Rosetta and FEX install paths are distinct");
     check(np_compat_tool_install_for_name("unknown-tool") == NULL,
           "unknown compatibility tool names do not resolve locally");
+
+    mgr = build_manager(2, 0);
+    uint8_t *fex_entry = entries + np_compat_tool_stride();
+    *(const char **)(entries + COMPAT_TOOL_NAME_OFF) = "notproton";
+    *(const char **)(fex_entry + COMPAT_TOOL_NAME_OFF) = "notproton-fex";
+    check(np_compat_registered_tool_for_name(mgr, "notproton") == entries,
+          "named Rosetta selection resolves to its own registered tool");
+    check(np_compat_registered_tool_for_name(mgr, "notproton-fex") == fex_entry,
+          "named FEX selection resolves to its own registered tool");
+    check(np_compat_registered_tool_for_name(mgr, "missing") == NULL,
+          "an unknown selected tool is not guessed");
 }
 
 int main(void) {
