@@ -358,7 +358,7 @@ int np_compat_ensure_tool_manifest(void) {
             NP_WARN("np_compat_ensure_tool_manifest: failed to write %s", path);
     }
 
-remove runner aliases    if (wrote > 0)
+    if (wrote > 0)
         NP_LOG("np_compat_ensure_tool_manifest: wrote %d file(s) to %s", wrote, tools_dir);
 
     return 0;
