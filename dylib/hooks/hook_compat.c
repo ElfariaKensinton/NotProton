@@ -69,15 +69,28 @@ static void *hook_FindToolForTargetApp(void *self, uint32_t appid) {
                appid);
         return NULL;
     }
-    void *tool = orig(self, appid);
 
-    if (tool || appid == 0)
-        return tool;
+    // Keep our two locally-registered tools authoritative. Steam's own resolver can
+    // return the first registered tool even when the per-app mapping points at the
+    // other one, which makes the FEX dropdown selection silently launch Rosetta.
+    np_compat_register_crossover(self);
+    const char *mapping = np_compat_app_mapping(self, appid);
+    if (mapping && (strcmp(mapping, "notproton") == 0 || strcmp(mapping, "notproton-fex") == 0)) {
+        void *selected = np_compat_registered_tool_for_name(self, mapping);
+        if (selected) {
+            NP_LOG("hook_FindToolForTargetApp: appID %u honoring explicit compatibility tool %s",
+                   appid, mapping);
+            return selected;
+        }
+    }
 
     // The NP_COMPAT_TOOL_NONE sentinel is honored as an explicit refusal.
-    const char *mapping = np_compat_app_mapping(self, appid);
     if (mapping && strcmp(mapping, NP_COMPAT_TOOL_NONE) == 0)
         return NULL;
+
+    void *tool = orig(self, appid);
+    if (tool || appid == 0)
+        return tool;
 
     if (!np_compat_would_force(self, appid))
         return NULL;
