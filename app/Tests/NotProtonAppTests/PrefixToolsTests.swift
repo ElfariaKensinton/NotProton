@@ -235,7 +235,7 @@ struct PrefixToolsTests {
 
         #expect(source.contains("notproton-environment"))
         #expect(source.contains("export \"$env_name=$env_value\""))
-        #expect(source.contains("WINEPREFIX|PATH"))
+        #expect(source.contains("CX_ROOT|CX_HOME|PATH|WINELOADER|WINESERVER|WINEDLLPATH|WINEPREFIX|"))
         #expect(source.contains("STEAM_COMPAT_DATA_PATH"))
     }
 
