@@ -162,9 +162,9 @@ static void persist_selection(uint32_t appid, const char *name) {
     FILE *f = fopen(temp, "w");
     if (!f) return;
 
-    int ok = fprintf(f, "%s\n", name) > 0 && fclose(f) == 0;
-    if (!ok) {
-        fclose(f);
+    int write_ok = fprintf(f, "%s\\n", name) > 0;
+    int close_ok = fclose(f) == 0;
+    if (!write_ok || !close_ok) {
         unlink(temp);
         return;
     }
