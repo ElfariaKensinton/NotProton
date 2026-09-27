@@ -356,6 +356,22 @@ static void offered_cases(void) {
     check(r.count == 1, "one tool that converts from windows is offered");
     check(strcmp(r.tools[0].name, "crossover") == 0, "the offered tool is the one that converts from windows");
 
+    reset();
+    tool_spec_t crossover_variants[] = {
+        { "notproton",     "CrossOver Preview (Rosetta)", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
+        { "notproton-fex", "CrossOver Preview (FEX)",     COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
+    };
+    build_tools(crossover_variants, 2);
+    stub_platforms_val = COMPAT_PLATFORM_WINDOWS;
+    rc = get_compat_tools(build_request(REQ_HAS_APPID, 7), (uintptr_t)response_buf);
+    check(rc == RESULT_OK, "both CrossOver variants are answered");
+    decode_reply(&r);
+    check(r.count == 2, "both CrossOver variants are offered to a windows-only app");
+    check(strcmp(r.tools[0].display, "CrossOver Preview (Rosetta)") == 0,
+          "the Rosetta tool keeps its display name");
+    check(strcmp(r.tools[1].display, "CrossOver Preview (FEX)") == 0,
+          "the FEX tool keeps its display name");
+
     // A tool that converts from linux is not offered to a windows-only app.
     reset();
     tool_spec_t linux_tool[] = {
