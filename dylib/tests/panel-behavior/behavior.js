@@ -7,7 +7,7 @@ if (!emit) { console.error('usage: behavior.js <emit>'); process.exit(2); }
 
 let failed = 0;
 for (const form of Object.keys(FORMS)) {
-  const { render: P, written } = panel(emit, form);
+  const { render: P, written, envWritten } = panel(emit, form);
   const t = runner(form);
   const nodes = opts => walk(P({ details: details(opts) }));
   const toggles = ns => ns.filter(x => x.type === 'Toggle').map(x => x.props.label);
