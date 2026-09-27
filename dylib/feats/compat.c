@@ -503,6 +503,10 @@ static void *g_manager;
 
 static void *np_compat_registered_tool_named(void *compat_mgr, const char *wanted);
 
+void *np_compat_registered_tool_for_name(void *compat_mgr, const char *name) {
+    return np_compat_registered_tool_named(compat_mgr, name);
+}
+
 void *np_compat_manager(void) {
     return g_manager;
 }
