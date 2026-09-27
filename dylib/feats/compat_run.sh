@@ -132,6 +132,14 @@ prefix_machine() {
   od -A n -t x2 -j "$((off + 4))" -N 2 "$dll" 2>/dev/null | tr -d ' \n'
 }
 
+tool_name() {
+  case "$1" in
+    aa64) printf 'the FEX build of CrossOver' ;;
+    8664) printf 'the Rosetta build of CrossOver' ;;
+    *) printf 'an older 32-bit setup' ;;
+  esac
+}
+
 request_prefix_rebuild() {
   case "${wine_unix##*/}" in
     aarch64-unix) want=aa64 ;;
@@ -142,6 +150,7 @@ request_prefix_rebuild() {
     fex) selected_want=aa64 ;;
     *) selected_want=8664 ;;
   esac
+  want="$selected_want"
 
   if [ "$loader_want" != "$selected_want" ]; then
     echo "=== selected $runner_link tool resolved to the wrong Wine architecture ($loader_want) ===" \
@@ -156,7 +165,7 @@ request_prefix_rebuild() {
     >> "$log" 2>&1 || true
 
   answer=$(osascript <<APPLESCRIPT 2>/dev/null
-display alert "NotProton: rebuild prefix" message "This game uses a prefix built for a different NotProton compatibility tool. The prefix must be rebuilt before the game can start. Your existing prefix will be kept as a backup." as critical buttons {"Cancel", "Rebuild"} default button "Rebuild" cancel button "Cancel"
+display alert "NotProton: rebuild prefix" message "This game originally ran under $(tool_name "$have"), but $(tool_name "$want") is selected now. The prefix must be rebuilt before the game can start. Your existing prefix will be kept as a backup." as critical buttons {"Cancel", "Rebuild"} default button "Rebuild" cancel button "Cancel"
 if button returned of result is "Rebuild" then
     return "rebuild"
 else
