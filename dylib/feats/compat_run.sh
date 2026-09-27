@@ -31,7 +31,7 @@ case "$verb" in
     ;;
 esac
 
-tool_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+tool_dir=$(cd -P "$(dirname "$0")" && pwd)
 tool_name=$(basename "$tool_dir")
 runners_root="$HOME/Library/Application Support/notproton/runners"
 
@@ -77,9 +77,7 @@ resolve_runner() {
       *) continue ;;
     esac
 
-    if [ -z "$best" ] || [ "$candidate_build" \> "$best" ]; then
-      best="$candidate_build"
-    fi
+    best="$candidate_build"
   done
 
   [ -n "$best" ] || return 1
