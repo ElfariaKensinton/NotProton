@@ -80,6 +80,7 @@ static int32_t g_tool_shift;
 
 #define COMPAT_SELECTION_MAX 128
 #define COMPAT_SELECTION_NAME_MAX 32
+#define COMPAT_SELECTION_DIR "compat-selections"
 
 typedef struct {
     uint32_t appid;
@@ -97,31 +98,148 @@ static int valid_selection_name(const char *name) {
     );
 }
 
-void np_compat_record_selection(uint32_t appid, const char *name) {
-    size_t i;
-    for (i = 0; i < g_selection_count; i++) {
+static int selection_path(char *out, size_t out_size, uint32_t appid) {
+    const char *home = np_home_dir();
+    if (!home) return -1;
+
+    int n = snprintf(out, out_size,
+                     "%s/Library/Application Support/notproton/%s/%u",
+                     home, COMPAT_SELECTION_DIR, appid);
+    return n >= 0 && (size_t)n < out_size ? 0 : -1;
+}
+
+static int ensure_selection_dir(void) {
+    const char *home = np_home_dir();
+    if (!home) return -1;
+
+    char path[512];
+    int n = snprintf(path, sizeof path, "%s/Library", home);
+    if (n < 0 || (size_t)n >= sizeof path || mkdir(path, 0755) != 0) {
+        struct stat st;
+        if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) return -1;
+    }
+
+    n = snprintf(path, sizeof path, "%s/Library/Application Support", home);
+    if (n < 0 || (size_t)n >= sizeof path || mkdir(path, 0755) != 0) {
+        struct stat st;
+        if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) return -1;
+    }
+
+    n = snprintf(path, sizeof path, "%s/Library/Application Support/notproton", home);
+    if (n < 0 || (size_t)n >= sizeof path || mkdir(path, 0755) != 0) {
+        struct stat st;
+        if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) return -1;
+    }
+
+    n = snprintf(path, sizeof path, "%s/Library/Application Support/notproton/%s",
+                 home, COMPAT_SELECTION_DIR);
+    if (n < 0 || (size_t)n >= sizeof path || mkdir(path, 0755) != 0) {
+        struct stat st;
+        if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) return -1;
+    }
+
+    return 0;
+}
+
+static void persist_selection(uint32_t appid, const char *name) {
+    char path[512];
+    if (selection_path(path, sizeof path, appid) != 0)
+        return;
+
+    if (!name || !name[0]) {
+        unlink(path);
+        return;
+    }
+
+    if (ensure_selection_dir() != 0)
+        return;
+
+    char temp[512];
+    int n = snprintf(temp, sizeof temp, "%s.tmp.%u", path, (unsigned)getpid());
+    if (n < 0 || (size_t)n >= sizeof temp)
+        return;
+
+    FILE *f = fopen(temp, "w");
+    if (!f) return;
+
+    int ok = fprintf(f, "%s\n", name) > 0 && fclose(f) == 0;
+    if (!ok) {
+        fclose(f);
+        unlink(temp);
+        return;
+    }
+
+    if (rename(temp, path) != 0)
+        unlink(temp);
+}
+
+static int load_persisted_selection(uint32_t appid,
+                                    char *name, size_t name_size) {
+    char path[512];
+    if (!name || name_size == 0 || selection_path(path, sizeof path, appid) != 0)
+        return 0;
+
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+
+    if (!fgets(name, (int)name_size, f)) {
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+
+    name[strcspn(name, "\r\n")] = '\0';
+    return valid_selection_name(name);
+}
+
+static void remember_selection(uint32_t appid, const char *name, int persist) {
+    for (size_t i = 0; i < g_selection_count; i++) {
         if (g_selections[i].appid != appid) continue;
 
         if (!valid_selection_name(name) || !name[0]) {
             g_selections[i] = g_selections[g_selection_count - 1];
             g_selection_count--;
+            if (persist) persist_selection(appid, NULL);
             return;
         }
 
         snprintf(g_selections[i].name, sizeof g_selections[i].name, "%s", name);
+        if (persist) persist_selection(appid, g_selections[i].name);
         return;
     }
 
-    if (!valid_selection_name(name) || !name[0] || g_selection_count >= COMPAT_SELECTION_MAX)
+    if (!valid_selection_name(name) || !name[0]) {
+        if (persist) persist_selection(appid, NULL);
         return;
+    }
+
+    if (g_selection_count >= COMPAT_SELECTION_MAX) {
+        if (persist) persist_selection(appid, name);
+        return;
+    }
 
     g_selections[g_selection_count].appid = appid;
     snprintf(g_selections[g_selection_count].name,
              sizeof g_selections[g_selection_count].name, "%s", name);
     g_selection_count++;
+    if (persist) persist_selection(appid, name);
+}
+
+void np_compat_record_selection(uint32_t appid, const char *name) {
+    remember_selection(appid, name, 1);
 }
 
 const char *np_compat_recorded_selection(uint32_t appid) {
+    for (size_t i = 0; i < g_selection_count; i++) {
+        if (g_selections[i].appid == appid)
+            return g_selections[i].name;
+    }
+
+    char persisted[COMPAT_SELECTION_NAME_MAX];
+    if (!load_persisted_selection(appid, persisted, sizeof persisted))
+        return NULL;
+
+    remember_selection(appid, persisted, 0);
     for (size_t i = 0; i < g_selection_count; i++) {
         if (g_selections[i].appid == appid)
             return g_selections[i].name;
