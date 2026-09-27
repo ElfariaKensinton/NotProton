@@ -31,6 +31,11 @@ case "$verb" in
     ;;
 esac
 
+app_id="$STEAM_COMPAT_APP_ID"
+case "$app_id" in ''|0) app_id="$SteamAppId" ;; esac
+case "$app_id" in ''|0) app_id=$(basename "$STEAM_COMPAT_DATA_PATH" 2>/dev/null) ;; esac
+case "$app_id" in ''|0|*[!0-9]*) app_id=0 ;; esac
+
 tool_dir=$(basename "$(dirname "$0")")
 case "$NOTPROTON_COMPAT_TOOL" in
   notproton-fex) runner_link=fex ;;
@@ -41,6 +46,25 @@ case "$NOTPROTON_COMPAT_TOOL" in
       *) runner_link=rosetta ;;
     esac
     ;;
+esac
+
+# Steam can enter the launch path through a process that does not share the
+# selection cache of the WebUI process. Prefer the persisted per-game choice
+# (and then the persisted global choice) over the directory Steam happened to
+# invoke, so an FEX selection can never silently run through Rosetta.
+selection_dir="$HOME/Library/Application Support/notproton/compat-selections"
+selected_tool=
+if [ "$app_id" -ne 0 ] && [ -r "$selection_dir/$app_id" ]; then
+  selected_tool=$(tr -d '
+' < "$selection_dir/$app_id" 2>/dev/null || true)
+fi
+if [ -z "$selected_tool" ] && [ -r "$selection_dir/0" ]; then
+  selected_tool=$(tr -d '
+' < "$selection_dir/0" 2>/dev/null || true)
+fi
+case "$selected_tool" in
+  notproton-fex) runner_link=fex ;;
+  notproton) runner_link=rosetta ;;
 esac
 
 runners_root="$HOME/Library/Application Support/notproton/runners"
@@ -127,11 +151,9 @@ while :; do
 done
 export STEAM_COMPAT_INSTALL_PATH
 
-app_id="$STEAM_COMPAT_APP_ID"
-case "$app_id" in ''|0) app_id="$SteamAppId" ;; esac
-case "$app_id" in ''|0) app_id=$(basename "$STEAM_COMPAT_DATA_PATH" 2>/dev/null) ;; esac
-case "$app_id" in ''|*[!0-9]*) app_id=0 ;; esac
 echo "app_id=$app_id (STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID)" >> "$log" 2>&1 || true
+echo "selected_tool=${selected_tool:-${NOTPROTON_COMPAT_TOOL:-$tool_dir}}" >> "$log" 2>&1 || true
+echo "runner_link=$runner_link" >> "$log" 2>&1 || true
 
 [ -n "$SteamAppId" ] || export SteamAppId="$app_id"
 [ -n "$SteamGameId" ] || export SteamGameId="$app_id"
