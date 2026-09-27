@@ -95,11 +95,13 @@ export NOTPROTON_RUNNER_LINK="$runner_link"
 export CX_HOME="$HOME/Library/Application Support/CrossOver"
 case "$runner_link" in
   fex)
+    wine_windows=aarch64-windows
     wine_unix="$CX_ROOT/lib/wine/aarch64-unix"
     WINELOADER="$wine_unix/wine.app/Contents/MacOS/wine"
     WINESERVER="$CX_ROOT/CrossOver-Hosted Application/wineserver-arm64"
     ;;
   rosetta)
+    wine_windows=x86_64-windows
     wine_unix="$CX_ROOT/lib/wine/x86_64-unix"
     WINELOADER="$wine_unix/wine"
     WINESERVER="$CX_ROOT/CrossOver-Hosted Application/wineserver"
@@ -111,7 +113,7 @@ export WINELOADER WINESERVER
 if [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" ]; then
   runner_missing=1
 fi
-export WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix"
+export WINEDLLPATH="$CX_ROOT/lib/wine/$wine_windows:$wine_unix"
 export PATH="$CX_ROOT/bin:$PATH"
 
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
