@@ -457,6 +457,9 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
 fi
 
 export WINEDEBUG="${WINEDEBUG:-err+all,fixme-all}"
+# Reapply per-prefix values after the bridge has configured its launch environment so
+# settings such as WINEDLLOVERRIDES can be intentionally customized per game.
+load_prefix_environment
 trap - EXIT
 echo "launch_env=$launch_env" >> "$log" 2>&1 || true
 echo "=== launching ($verb): $WINELOADER $* ===" >> "$log" 2>&1 || true
