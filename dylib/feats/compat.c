@@ -89,8 +89,6 @@ static int write_tool_declaration(const char *path, const np_tool_spec_t *spec) 
 
 static int32_t g_tool_shift;
 
-static int32_t g_tool_shift;
-
 // LDR Wt,[X0,#imm]. Writes the byte offset and destination register.
 static int ldr32_from_x0(uint32_t w, uint32_t *off, uint32_t *rt) {
     if ((w & 0xFFC003E0u) != 0xB9400000u) return 0;
