@@ -316,8 +316,15 @@ static int write_tool_manifest(const char *tools_dir,
         wrote++;
 
     snprintf(path, sizeof(path), "%s/run", tool_dir);
-    if (write_file(path, RUN_SCRIPT, 1) == 0)
-        wrote++;
+    FILE *run = fopen(path, "w");
+    if (run) {
+        fprintf(run, "#!/bin/sh\\nNOTPROTON_COMPAT_TOOL='%s'\\nexport NOTPROTON_COMPAT_TOOL\\n", name);
+        fputs(RUN_SCRIPT, run);
+        if (fclose(run) == 0) {
+            chmod(path, 0755);
+            wrote++;
+        }
+    }
 
     return wrote;
 }
