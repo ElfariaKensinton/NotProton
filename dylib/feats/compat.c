@@ -528,8 +528,6 @@ void *np_compat_manager(void) {
 }
 
 void np_compat_register_crossover(void *compat_mgr) {
-    static unsigned registered_mask;
-
     if (compat_mgr)
         g_manager = compat_mgr;
 
@@ -547,7 +545,6 @@ void np_compat_register_crossover(void *compat_mgr) {
     static uint8_t tool_buffers[TOOL_COUNT][COMPAT_TOOL_STRIDE + 64];
 
     for (size_t i = 0; i < TOOL_COUNT; i++) {
-        unsigned bit = 1u << i;
         const np_tool_spec_t *spec = &TOOL_SPECS[i];
         int found = 0;
 
@@ -560,10 +557,8 @@ void np_compat_register_crossover(void *compat_mgr) {
             }
         }
 
-        if (found || (registered_mask & bit)) {
-            registered_mask |= bit;
+        if (found)
             continue;
-        }
 
         uint8_t *tool = tool_buffers[i];
         memset(tool, 0, sizeof(tool_buffers[i]));
@@ -578,7 +573,6 @@ void np_compat_register_crossover(void *compat_mgr) {
         *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_TO_OSLIST_OFF)) = to_oslist;
 
         g_yld_register_tool(compat_mgr, tool);
-        registered_mask |= bit;
         NP_LOG("np_compat_register_crossover: registered %s into manager 0x%llx",
                spec->name, (unsigned long long)(uintptr_t)compat_mgr);
 
