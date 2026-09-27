@@ -36,14 +36,8 @@ tool_name=$(basename "$tool_dir")
 runners_root="$HOME/Library/Application Support/notproton/runners"
 
 case "$tool_name" in
-  notproton)
-    runner_link="rosetta"
-    requested_arch="x86_64-unix"
-    ;;
-  notproton-fex)
-    runner_link="fex"
-    requested_arch="aarch64-unix"
-    ;;
+  notproton) runner_link="rosetta" ;;
+  notproton-fex) runner_link="fex" ;;
   *)
     echo "Unknown NotProton compatibility tool '$tool_name'." >&2
     exit 1
@@ -55,20 +49,26 @@ resolve_runner() {
   current_build=${current_target%/CrossOver}
   current_build=${current_build##*/}
 
-  if [ -n "$current_build" ] \
-      && [ -d "$runners_root/$current_build/CrossOver/lib/wine/$requested_arch" ]; then
-    case "$runner_link:$current_build" in
-      rosetta:crossover-*-fex) ;;
-      rosetta:crossover-*) printf '%s\n' "$runners_root/$current_build/CrossOver"; return 0 ;;
-      fex:crossover-*-fex) printf '%s\n' "$runners_root/$current_build/CrossOver"; return 0 ;;
-    esac
-  fi
+  case "$runner_link:$current_build" in
+    rosetta:crossover-*-fex) ;;
+    rosetta:crossover-*)
+      [ -d "$runners_root/$current_build/CrossOver/lib/wine/x86_64-unix" ] && {
+        printf "%s\n" "$runners_root/$current_build/CrossOver"
+        return 0
+      }
+      ;;
+    fex:crossover-*-fex)
+      [ -d "$runners_root/$current_build/CrossOver/lib/wine/x86_64-unix" ] && {
+        printf "%s\n" "$runners_root/$current_build/CrossOver"
+        return 0
+      }
+      ;;
+  esac
 
   best=""
   for candidate in "$runners_root"/crossover-*; do
-    [ -d "$candidate" ] || continue
+    [ -d "$candidate/CrossOver/lib/wine/x86_64-unix" ] || continue
     candidate_build=${candidate##*/}
-    [ -d "$candidate/CrossOver/lib/wine/$requested_arch" ] || continue
 
     case "$runner_link:$candidate_build" in
       rosetta:crossover-*-fex) continue ;;
@@ -81,7 +81,7 @@ resolve_runner() {
   done
 
   [ -n "$best" ] || return 1
-  printf '%s\n' "$runners_root/$best/CrossOver"
+  printf "%s\n" "$runners_root/$best/CrossOver"
 }
 
 CX_ROOT=$(resolve_runner) || {
