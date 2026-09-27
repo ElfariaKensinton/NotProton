@@ -109,6 +109,33 @@ struct PrefixToolsTests {
         #expect(environment["WINEDLLOVERRIDES"] == nil)
     }
 
+    @Test("Per-prefix environment settings are added to the Wine environment")
+    func appliesPerPrefixEnvironment() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "np-env-tools-\(UUID().uuidString)")
+        let library = SteamLibrary(root: root)
+        let prefix = WinePrefix(
+            appID: "1574480",
+            name: nil,
+            library: library,
+            lastUsed: nil
+        )
+        try FileManager.default.createDirectory(at: prefix.root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try PrefixEnvironmentStore.save(
+            """
+            DXVK_HUD=1
+            MANGOHUD=1
+            """,
+            for: prefix
+        )
+
+        let environment = PrefixTools.environment(prefix: prefix)
+        #expect(environment["DXVK_HUD"] == "1")
+        #expect(environment["MANGOHUD"] == "1")
+    }
+
     @Test("The sync backend is whatever the last launch recorded")
     func readsRecordedBackend() throws {
         let root = URL(filePath: NSTemporaryDirectory())
