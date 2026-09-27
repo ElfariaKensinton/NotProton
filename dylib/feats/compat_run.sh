@@ -31,7 +31,15 @@ case "$verb" in
     ;;
 esac
 
-CX_ROOT="$HOME/Library/Application Support/notproton/runners/current"
+tool_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+tool_name=$(basename "$tool_dir")
+runner_link="current"
+case "$tool_name" in
+  notproton) runner_link="rosetta" ;;
+  notproton-fex) runner_link="fex" ;;
+esac
+
+CX_ROOT="$HOME/Library/Application Support/notproton/runners/$runner_link"
 export CX_ROOT
 # cxcompatdb resolves its database through CX_HOME and logs an error for
 # every module loaded without it :(
@@ -49,6 +57,11 @@ export WINELOADER WINESERVER
 export WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix"
 export PATH="$CX_ROOT/bin:$PATH"
 
+if [ "$runner_link" != "current" ] && [ ! -d "$CX_ROOT" ]; then
+  echo "CrossOver runner '$runner_link' is not configured. Run NotProton to set up the compatibility tool." >&2
+  exit 1
+fi
+
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   log="$STEAM_COMPAT_DATA_PATH/notproton-run.log"
 else
@@ -64,6 +77,8 @@ fi
   echo "STEAM_COMPAT_DATA_PATH=$STEAM_COMPAT_DATA_PATH"
   echo "STEAM_COMPAT_INSTALL_PATH=$STEAM_COMPAT_INSTALL_PATH"
   echo "STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID"
+  echo "tool_name=$tool_name"
+  echo "runner_link=$runner_link"
   echo "-- steam env passed through --"
   env | grep -iE '^(Steam|SDL_)' | sort
 } >> "$log" 2>&1 || true
@@ -107,8 +122,8 @@ prefix_machine() {
 
 tool_name() {
   case "$1" in
-    aa64) printf 'the FEX build of CrossOver' ;;
-    8664) printf 'the Rosetta build of CrossOver' ;;
+    aa64) printf 'CrossOver Preview (FEX)' ;;
+    8664) printf 'CrossOver Preview (Rosetta)' ;;
     *) printf 'an older 32-bit setup' ;;
   esac
 }
