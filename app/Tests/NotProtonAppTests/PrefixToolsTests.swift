@@ -229,6 +229,16 @@ struct PrefixToolsTests {
 
     // The same rule is read once in shell and once here, so a word that drifted on one side
     // leaves the pane calling a prefix fine that the launcher will not start, or the reverse.
+    @Test("The Steam compatibility runner loads per-prefix environment settings")
+    func compatibilityRunnerLoadsPrefixEnvironment() throws {
+        let source = try Self.compatSource()
+
+        #expect(source.contains("notproton-environment"))
+        #expect(source.contains("export "$env_name=$env_value""))
+        #expect(source.contains("WINEPREFIX|PATH"))
+        #expect(source.contains("STEAM_COMPAT_DATA_PATH"))
+    }
+
     @Test("The launcher and the pane read the prefix arch the same way")
     func archRuleMatchesRunScript() throws {
         let source = try Self.compatSource()
