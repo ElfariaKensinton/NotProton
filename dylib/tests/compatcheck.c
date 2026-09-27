@@ -273,6 +273,21 @@ static void installed_fn_cases(void) {
     check(np_compat_tool_install_for_name("unknown-tool") == NULL,
           "unknown compatibility tool names do not resolve locally");
 
+    np_compat_record_selection(42, "notproton-fex");
+    check(strcmp(np_compat_recorded_selection(42), "notproton-fex") == 0,
+          "a per-app FEX selection is remembered exactly");
+    check(np_compat_recorded_selection(43) == NULL,
+          "an unselected app has no remembered tool");
+    np_compat_record_selection(42, "notproton");
+    check(strcmp(np_compat_recorded_selection(42), "notproton") == 0,
+          "changing an app selection replaces the remembered tool");
+    np_compat_record_selection(42, "notproton.none");
+    check(strcmp(np_compat_recorded_selection(42), "notproton.none") == 0,
+          "selecting no tool is remembered");
+    np_compat_record_selection(42, NULL);
+    check(np_compat_recorded_selection(42) == NULL,
+          "clearing a selection removes the remembered tool");
+
     mgr = build_manager(2, 0);
     uint8_t *fex_entry = entries + np_compat_tool_stride();
     *(const char **)(entries + COMPAT_TOOL_NAME_OFF) = "notproton";
