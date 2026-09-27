@@ -73,19 +73,20 @@ enum PrefixEnvironmentStore {
                 throw ValidationError.invalidLine(number: number, text: line)
             }
 
-            let rawName = String(line[..<equal]).trimmingCharacters(in: .whitespaces)
+            let rawName = String(line[..<equal])
+            let name = rawName.trimmingCharacters(in: .whitespaces)
             let valueStart = line.index(after: equal)
             let value = String(line[valueStart...])
 
-            guard isEnvironmentName(rawName) else {
+            guard rawName == name, isEnvironmentName(name) else {
                 throw ValidationError.invalidLine(number: number, text: line)
             }
 
-            if protectedNames.contains(rawName) {
-                throw ValidationError.protectedName(number: number, name: rawName)
+            if protectedNames.contains(name) {
+                throw ValidationError.protectedName(number: number, name: name)
             }
 
-            values[rawName] = value
+            values[name] = value
         }
 
         return values
@@ -110,14 +111,18 @@ enum PrefixEnvironmentStore {
     }
 
     private static func isEnvironmentName(_ name: String) -> Bool {
-        guard let first = name.first,
-              first == "_" || first.isLetter
+        let bytes = Array(name.utf8)
+        guard let first = bytes.first,
+              first == 0x5f || (0x41...0x5a).contains(first) || (0x61...0x7a).contains(first)
         else {
             return false
         }
 
-        return name.dropFirst().allSatisfy { character in
-            character == "_" || character.isLetter || character.isNumber
+        return bytes.dropFirst().allSatisfy { byte in
+            byte == 0x5f
+                || (0x41...0x5a).contains(byte)
+                || (0x61...0x7a).contains(byte)
+                || (0x30...0x39).contains(byte)
         }
     }
 }
