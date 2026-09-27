@@ -78,6 +78,57 @@ static int ensure_dir(const char *path) {
 
 static int32_t g_tool_shift;
 
+#define COMPAT_SELECTION_MAX 128
+#define COMPAT_SELECTION_NAME_MAX 32
+
+typedef struct {
+    uint32_t appid;
+    char name[COMPAT_SELECTION_NAME_MAX];
+} compat_selection_t;
+
+static compat_selection_t g_selections[COMPAT_SELECTION_MAX];
+static size_t g_selection_count;
+
+static int valid_selection_name(const char *name) {
+    return name && (
+        strcmp(name, TOOL_DIR_NAME) == 0 ||
+        strcmp(name, TOOL_DIR_NAME_FEX) == 0 ||
+        strcmp(name, NP_COMPAT_TOOL_NONE) == 0
+    );
+}
+
+void np_compat_record_selection(uint32_t appid, const char *name) {
+    size_t i;
+    for (i = 0; i < g_selection_count; i++) {
+        if (g_selections[i].appid != appid) continue;
+
+        if (!valid_selection_name(name) || !name[0]) {
+            g_selections[i] = g_selections[g_selection_count - 1];
+            g_selection_count--;
+            return;
+        }
+
+        snprintf(g_selections[i].name, sizeof g_selections[i].name, "%s", name);
+        return;
+    }
+
+    if (!valid_selection_name(name) || !name[0] || g_selection_count >= COMPAT_SELECTION_MAX)
+        return;
+
+    g_selections[g_selection_count].appid = appid;
+    snprintf(g_selections[g_selection_count].name,
+             sizeof g_selections[g_selection_count].name, "%s", name);
+    g_selection_count++;
+}
+
+const char *np_compat_recorded_selection(uint32_t appid) {
+    for (size_t i = 0; i < g_selection_count; i++) {
+        if (g_selections[i].appid == appid)
+            return g_selections[i].name;
+    }
+    return NULL;
+}
+
 // LDR Wt,[X0,#imm]. Writes the byte offset and destination register.
 static int ldr32_from_x0(uint32_t w, uint32_t *off, uint32_t *rt) {
     if ((w & 0xFFC003E0u) != 0xB9400000u) return 0;
