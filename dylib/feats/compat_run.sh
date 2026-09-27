@@ -31,8 +31,35 @@ case "$verb" in
     ;;
 esac
 
-CX_ROOT="$HOME/Library/Application Support/notproton/runners/current"
+tool_dir=$(basename "$(dirname "$0")")
+case "$tool_dir" in
+  notproton-fex|*-fex) runner_link=fex ;;
+  *) runner_link=rosetta ;;
+esac
+
+runners_root="$HOME/Library/Application Support/notproton/runners"
+find_runner_root() {
+  case "$1" in
+    fex)
+      for root in "$runners_root"/crossover-*-fex/CrossOver; do
+        [ -d "$root" ] && { printf '%s\n' "$root"; return 0; }
+      done
+      ;;
+    rosetta)
+      for root in "$runners_root"/crossover-*/CrossOver; do
+        case "$root" in *-fex/CrossOver) continue ;; esac
+        [ -d "$root" ] && { printf '%s\n' "$root"; return 0; }
+      done
+      ;;
+  esac
+  return 1
+}
+
+CX_ROOT=$(find_runner_root "$runner_link" 2>/dev/null || true)
+runner_missing=0
+[ -n "$CX_ROOT" ] || runner_missing=1
 export CX_ROOT
+export NOTPROTON_RUNNER_LINK="$runner_link"
 # cxcompatdb resolves its database through CX_HOME and logs an error for
 # every module loaded without it :(
 export CX_HOME="$HOME/Library/Application Support/CrossOver"
@@ -105,30 +132,78 @@ prefix_machine() {
   od -A n -t x2 -j "$((off + 4))" -N 2 "$dll" 2>/dev/null | tr -d ' \n'
 }
 
-tool_name() {
-  case "$1" in
-    aa64) printf 'the FEX build of CrossOver' ;;
-    8664) printf 'the Rosetta build of CrossOver' ;;
-    *) printf 'an older 32-bit setup' ;;
-  esac
-}
-
-refuse_foreign_prefix() {
+request_prefix_rebuild() {
   case "${wine_unix##*/}" in
     aarch64-unix) want=aa64 ;;
     *) want=8664 ;;
   esac
+  loader_want="$want"
+  case "$runner_link" in
+    fex) selected_want=aa64 ;;
+    *) selected_want=8664 ;;
+  esac
+
+  if [ "$loader_want" != "$selected_want" ]; then
+    echo "=== selected $runner_link tool resolved to the wrong Wine architecture ($loader_want) ===" \
+      >> "$log" 2>&1 || true
+    return 1
+  fi
+
   have=$(prefix_machine) || return 0
-  [ "$have" = "$want" ] && return 0
-  echo "=== prefix ntdll is $have and this compatibility tool wants $want, rebuild the prefix in NotProton ===" >> "$log" 2>&1 || true
+  [ "$have" = "$selected_want" ] && return 0
+
+  echo "=== prefix ntdll is $have and this compatibility tool wants $selected_want ===" \
+    >> "$log" 2>&1 || true
 
   if [ "$verb" != run ]; then
-    osascript >/dev/null 2>&1 <<APPLESCRIPT || true
-display alert "This game needs its prefix rebuilt" message "This game originally ran under $(tool_name "$have"), but $(tool_name "$want") is present now. The prefix needs to be rebuilt in NotProton in order to run the game. You will not lose game saves by rebuilding the prefix." as critical
+    answer=$(osascript <<APPLESCRIPT 2>/dev/null
+display alert "NotProton: rebuild prefix" message "This game uses a prefix built for a different NotProton compatibility tool. The prefix must be rebuilt before the game can start. Your existing prefix will be kept as a backup." as critical buttons {"Cancel", "Rebuild"} default button "Rebuild" cancel button "Cancel"
+if button returned of result is "Rebuild" then
+    return "rebuild"
+else
+    return "cancel"
+end if
 APPLESCRIPT
+    ) || answer=cancel
+  else
+    answer=rebuild
   fi
-  exit 1
+
+  [ "$answer" = "rebuild" ] || {
+    echo "=== user declined prefix rebuild ===" >> "$log" 2>&1 || true
+    return 1
+  }
+
+  encoded=$(printf '%s' "$STEAM_COMPAT_DATA_PATH" \
+    | /usr/bin/base64 | tr -d '\n' | tr '+/' '-_' | tr -d '=')
+  request_url="notproton://rebuild-prefix?runner=$runner_link&path64=$encoded"
+
+  echo "=== requesting prefix rebuild through NotProton ($runner_link) ===" \
+    >> "$log" 2>&1 || true
+  if ! open -g "$request_url" >> "$log" 2>&1; then
+    echo "=== could not open NotProton to rebuild the prefix ===" >> "$log" 2>&1 || true
+    return 1
+  fi
+
+  i=0
+  while [ "$i" -lt 180 ]; do
+    have=$(prefix_machine 2>/dev/null || true)
+    [ "$have" = "$selected_want" ] && {
+      echo "=== prefix rebuilt successfully for $runner_link ===" >> "$log" 2>&1 || true
+      return 0
+    }
+    sleep 1
+    i=$((i + 1))
+  done
+
+  echo "=== prefix rebuild did not complete successfully ===" >> "$log" 2>&1 || true
+  return 1
 }
+if [ "$runner_missing" -ne 0 ]; then
+  echo "=== no $runner_link runner clone is installed ===" >> "$log" 2>&1 || true
+  exit 1
+fi
+
 # Steam cloud related
 merge_user_dir() {
   src=$1
@@ -327,7 +402,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   printf '%s' "$WINEMSYNC" \
     > "$STEAM_COMPAT_DATA_PATH/notproton-msync" 2>/dev/null || true
   stage_step="prefix arch check"
-  refuse_foreign_prefix
+  request_prefix_rebuild || exit 1
   echo "sync: WINEMSYNC=$WINEMSYNC from $msync_from" >> "$log" 2>&1 || true
   "$WINESERVER" -k >> "$log" 2>&1 || true
   stage_step="profile layout"

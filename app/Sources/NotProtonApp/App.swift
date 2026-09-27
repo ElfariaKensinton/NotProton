@@ -1,5 +1,6 @@
 // Self-explanatory
 
+import AppKit
 import SwiftUI
 
 @main
@@ -21,9 +22,95 @@ struct NotProtonApp: App {
                 .environment(prefixes)
                 .frame(minWidth: 720, minHeight: 460)
                 .onChange(of: pane) { prefixes.forgetOutcome() }
+                .onOpenURL { handleExternalURL($0) }
         }
         .defaultSize(width: 900, height: 760)
         .commands { menus }
+    }
+
+    @MainActor
+    private func handleExternalURL(_ url: URL) {
+        guard url.scheme == "notproton", url.host == "rebuild-prefix",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return }
+
+        let values = Dictionary(
+            uniqueKeysWithValues: (components.queryItems ?? []).compactMap { item in
+                item.value.map { (item.name, $0) }
+            }
+        )
+
+        guard let runnerName = values["runner"],
+              let encodedPath = values["path64"],
+              let data = Data(base64Encoded: encodedPath
+                .replacingOccurrences(of: "-", with: "+")
+                .replacingOccurrences(of: "_", with: "/")
+                    + String(repeating: "=", count: (4 - encodedPath.count % 4) % 4)),
+              let dataPath = String(data: data, encoding: .utf8)
+        else {
+            AppLog.note("external rebuild request was malformed")
+            return
+        }
+
+        let build = SupportedRunners.all.first {
+            runnerName == ($0.flavor ?? "rosetta")
+        }
+        guard let build else {
+            AppLog.note("external rebuild request named unknown runner " + runnerName)
+            return
+        }
+
+        let dataURL = URL(filePath: dataPath)
+        let appID = dataURL.lastPathComponent
+        let libraryRoot = dataURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let library = SteamLibrary(root: libraryRoot)
+        let prefix = WinePrefix(
+            appID: appID,
+            name: PrefixStore.appName(appID: appID, in: library),
+            library: library,
+            lastUsed: nil
+        )
+
+        guard FileManager.default.fileExists(
+            atPath: prefix.pfx.path(percentEncoded: false)
+        ) else {
+            AppLog.note("external rebuild request found no prefix at " + prefix.pfx.path(percentEncoded: false))
+            return
+        }
+
+        let runner = SupportPaths.clonedRoot(forBuild: build.id)
+        guard FileManager.default.fileExists(
+            atPath: runner.appending(path: "lib/wine").path(percentEncoded: false)
+        ) else {
+            AppLog.note("external rebuild request has no installed runner " + build.id)
+            return
+        }
+
+        Task {
+            NSApp.activate(ignoringOtherApps: true)
+            do {
+                _ = try await Task.detached(priority: .userInitiated) {
+                    try PrefixTools.recreate(prefix, runner: runner, keepBackup: true)
+                }.value
+                AppLog.note(
+                    "external rebuild succeeded: app " + appID + ", runner " + build.displayVersion
+                )
+            } catch {
+                AppLog.note(
+                    "external rebuild failed: app " + appID + ", runner " + build.displayVersion + ": "
+                        + error.localizedDescription
+                )
+                let alert = NSAlert()
+                alert.messageText = "Prefix rebuild failed"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .critical
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
     }
 
     @CommandsBuilder
