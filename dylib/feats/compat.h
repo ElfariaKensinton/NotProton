@@ -95,6 +95,8 @@ const char *np_compat_app_mapping(void *compat_mgr, uint32_t appid);
 // to the client default. Appid zero sets the global default at lower priority.
 void np_compat_set_mapping_fn(uintptr_t set_compat_tool_mapping);
 void np_compat_map_tool(void *compat_mgr, uint32_t appid, const char *tool_name);
+void np_compat_record_selection(uint32_t appid, const char *tool_name);
+const char *np_compat_recorded_selection(uint32_t appid);
 
 // CCompatManager::YldRegisterTool, resolved at install time.
 void np_compat_set_register_fn(uintptr_t yld_register_tool);
