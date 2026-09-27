@@ -149,7 +149,7 @@ static void enabled_cases(void) {
 
 // A manager holding `count` entries, the one at `named_slot` carrying the tool name.
 static uint8_t manager[0x400];
-static uint8_t entries[8 * (COMPAT_TOOL_STRIDE + 64)];
+static uint8_t entries[COMPAT_MANAGER_TOOLS_MAX * (COMPAT_TOOL_STRIDE + 64)];
 
 static void *build_manager(uint32_t count, int named_slot) {
     memset(manager, 0, sizeof manager);
