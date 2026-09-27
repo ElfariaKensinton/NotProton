@@ -3,8 +3,6 @@
 #include "../util/log.h"
 #include "../util/file.h"
 
-#include <dirent.h>
-#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,12 +39,11 @@ static const char TOOL_MANIFEST[] =
 typedef struct {
     const char *name;
     const char *display;
-    const char *runner_alias;
 } np_tool_spec_t;
 
 static const np_tool_spec_t TOOL_SPECS[TOOL_COUNT] = {
-    { TOOL_DIR_NAME,     TOOL_ROSETTA_DISPLAY_NAME, "rosetta" },
-    { TOOL_FEX_DIR_NAME, TOOL_FEX_DISPLAY_NAME,     "fex" },
+    { TOOL_DIR_NAME,     TOOL_ROSETTA_DISPLAY_NAME },
+    { TOOL_FEX_DIR_NAME, TOOL_FEX_DISPLAY_NAME },
 };
 
 #include "compat_run.h"  // RUN_SCRIPT, generated from compat_run.sh
@@ -90,106 +87,7 @@ static int write_tool_declaration(const char *path, const np_tool_spec_t *spec) 
     return write_file(path, content, 0);
 }
 
-static int ends_with(const char *value, const char *suffix) {
-    size_t value_len = strlen(value);
-    size_t suffix_len = strlen(suffix);
-    return value_len >= suffix_len
-        && strcmp(value + value_len - suffix_len, suffix) == 0;
-}
-
-static int runner_matches_variant(const char *name, int want_fex) {
-    static const char prefix[] = "crossover-";
-    size_t len = strlen(name);
-    if (len <= sizeof(prefix) - 1 || strncmp(name, prefix, sizeof(prefix) - 1) != 0)
-        return 0;
-
-    return ends_with(name, "-fex") == want_fex;
-}
-
-static int runner_candidate_valid(const char *runners_dir, const char *name, int want_fex) {
-    char path[PATH_MAX];
-    const char *arch = want_fex ? "aarch64-unix" : "x86_64-unix";
-    int n = snprintf(path, sizeof(path),
-                     "%s/%s/CrossOver/lib/wine/%s", runners_dir, name, arch);
-    return n > 0 && (size_t)n < sizeof(path) && access(path, R_OK) == 0;
-}
-
-static int choose_runner_target(const char *runners_dir, int want_fex,
-                                char *target, size_t target_size) {
-    char current_link[PATH_MAX];
-    int n = snprintf(current_link, sizeof(current_link), "%s/current", runners_dir);
-    if (n > 0 && (size_t)n < sizeof(current_link)) {
-        char current_target[PATH_MAX];
-        ssize_t len = readlink(current_link, current_target, sizeof(current_target) - 1);
-        if (len > 0) {
-            current_target[len] = '\0';
-            const char *name_start = strstr(current_target, "crossover-");
-            if (name_start) {
-                char name[PATH_MAX];
-                size_t name_len = strcspn(name_start, "/");
-                if (name_len < sizeof(name)) {
-                    memcpy(name, name_start, name_len);
-                    name[name_len] = '\0';
-                    if (runner_matches_variant(name, want_fex)
-                        && runner_candidate_valid(runners_dir, name, want_fex)) {
-                        n = snprintf(target, target_size, "%s/CrossOver", name);
-                        return n > 0 && (size_t)n < target_size;
-                    }
-                }
-            }
-        }
-    }
-
-    DIR *dir = opendir(runners_dir);
-    if (!dir) return 0;
-
-    char best[PATH_MAX] = {0};
-    struct dirent *entry;
-    while ((entry = readdir(dir))) {
-        if (!runner_matches_variant(entry->d_name, want_fex)) continue;
-        if (!runner_candidate_valid(runners_dir, entry->d_name, want_fex)) continue;
-        if (!best[0] || strcmp(entry->d_name, best) > 0)
-            snprintf(best, sizeof(best), "%s", entry->d_name);
-    }
-    closedir(dir);
-
-    if (!best[0]) return 0;
-    n = snprintf(target, target_size, "%s/CrossOver", best);
-    return n > 0 && (size_t)n < target_size;
-}
-
-static void ensure_runner_alias(const char *runners_dir, const char *alias, int want_fex) {
-    char target[PATH_MAX];
-    if (!choose_runner_target(runners_dir, want_fex, target, sizeof(target)))
-        return;
-
-    char link_path[PATH_MAX];
-    char staging[PATH_MAX];
-    int n = snprintf(link_path, sizeof(link_path), "%s/%s", runners_dir, alias);
-    if (n <= 0 || (size_t)n >= sizeof(link_path)) return;
-    n = snprintf(staging, sizeof(staging), "%s/.%s.new", runners_dir, alias);
-    if (n <= 0 || (size_t)n >= sizeof(staging)) return;
-
-    char existing[PATH_MAX];
-    ssize_t existing_len = readlink(link_path, existing, sizeof(existing) - 1);
-    if (existing_len > 0) {
-        existing[existing_len] = '\0';
-        if (strcmp(existing, target) == 0) return;
-    }
-
-    unlink(staging);
-    if (symlink(target, staging) != 0) {
-        NP_WARN("ensure_runner_alias: could not stage %s -> %s", alias, target);
-        return;
-    }
-    if (rename(staging, link_path) != 0) {
-        unlink(staging);
-        NP_WARN("ensure_runner_alias: could not replace %s", link_path);
-        return;
-    }
-
-    NP_LOG("ensure_runner_alias: %s -> %s", link_path, target);
-}
+static int32_t g_tool_shift;
 
 static int32_t g_tool_shift;
 
@@ -415,7 +313,7 @@ int np_compat_ensure_tool_manifest(void) {
     const char *home = np_home_dir();
     if (!home) return -1;
 
-    char tools_dir[PATH_MAX];
+    char tools_dir[512];
     int n = snprintf(tools_dir, sizeof(tools_dir),
                      "%s/Library/Application Support/Steam/compatibilitytools.d", home);
     if (n <= 0 || (size_t)n >= sizeof(tools_dir))
@@ -426,8 +324,8 @@ int np_compat_ensure_tool_manifest(void) {
         return -1;
     }
 
-    char tool_dir[PATH_MAX];
-    char path[PATH_MAX];
+    char tool_dir[512];
+    char path[512];
     int wrote = 0;
 
     for (size_t i = 0; i < TOOL_COUNT; i++) {
@@ -460,22 +358,14 @@ int np_compat_ensure_tool_manifest(void) {
             NP_WARN("np_compat_ensure_tool_manifest: failed to write %s", path);
     }
 
-    char runners_dir[PATH_MAX];
-    n = snprintf(runners_dir, sizeof(runners_dir),
-                 "%s/Library/Application Support/notproton/runners", home);
-    if (n > 0 && (size_t)n < sizeof(runners_dir)) {
-        ensure_runner_alias(runners_dir, TOOL_SPECS[0].runner_alias, 0);
-        ensure_runner_alias(runners_dir, TOOL_SPECS[1].runner_alias, 1);
-    }
-
-    if (wrote > 0)
+remove runner aliases    if (wrote > 0)
         NP_LOG("np_compat_ensure_tool_manifest: wrote %d file(s) to %s", wrote, tools_dir);
 
     return 0;
 }
 
 static const char *np_compat_tool_dir_for_name(const char *name) {
-    static char dirs[TOOL_COUNT][PATH_MAX];
+    static char dirs[TOOL_COUNT][512];
     static int resolved;
     const char *home = np_home_dir();
 
