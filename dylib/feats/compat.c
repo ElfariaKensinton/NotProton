@@ -14,7 +14,10 @@
 // the tool's name contains "proton" so without a match every AutoCloud rule silently
 // skips the app.
 #define TOOL_DIR_NAME "notproton"
-#define TOOL_DISPLAY_NAME "CrossOver Preview"
+#define TOOL_FEX_DIR_NAME "notproton-fex"
+#define TOOL_ROSETTA_DISPLAY_NAME "CrossOver Preview (Rosetta)"
+#define TOOL_FEX_DISPLAY_NAME "CrossOver Preview (FEX)"
+#define TOOL_COUNT 2
 
 #define COMPAT_MANAGER_ENABLED_OFF  0x7B0
 #define COMPAT_TOOL_STRIDE          0x130
@@ -33,23 +36,15 @@ static const char TOOL_MANIFEST[] =
     "  \"commandline\" \"/run %verb%\"\n"
     "}\n";
 
-// Steam's compatibilitytools.d scanner registers a tool when this file is present
-// in the tool subdirectory. install_path is "." because the manifest lives inside
-// the tool directory. to_oslist is macos
-static const char TOOL_DECLARATION[] =
-    "\"compatibilitytools\"\n"
-    "{\n"
-    "  \"compat_tools\"\n"
-    "  {\n"
-    "    \"" TOOL_DIR_NAME "\"\n"
-    "    {\n"
-    "      \"install_path\" \".\"\n"
-    "      \"display_name\" \"" TOOL_DISPLAY_NAME "\"\n"
-    "      \"from_oslist\" \"windows\"\n"
-    "      \"to_oslist\" \"macos\"\n"
-    "    }\n"
-    "  }\n"
-    "}\n";
+typedef struct {
+    const char *name;
+    const char *display;
+} np_tool_spec_t;
+
+static const np_tool_spec_t TOOL_SPECS[TOOL_COUNT] = {
+    { TOOL_DIR_NAME,     TOOL_ROSETTA_DISPLAY_NAME },
+    { TOOL_FEX_DIR_NAME, TOOL_FEX_DISPLAY_NAME },
+};
 
 #include "compat_run.h"  // RUN_SCRIPT, generated from compat_run.sh
 
@@ -68,6 +63,28 @@ static int ensure_dir(const char *path) {
     if (stat(path, &st) == 0)
         return S_ISDIR(st.st_mode) ? 0 : -1;
     return mkdir(path, 0755);
+}
+
+static int write_tool_declaration(const char *path, const np_tool_spec_t *spec) {
+    char content[1024];
+    int len = snprintf(
+        content, sizeof(content),
+        "\"compatibilitytools\"\n"
+        "{\n"
+        "  \"compat_tools\"\n"
+        "  {\n"
+        "    \"%s\"\n"
+        "    {\n"
+        "      \"install_path\" \".\"\n"
+        "      \"display_name\" \"%s\"\n"
+        "      \"from_oslist\" \"windows\"\n"
+        "      \"to_oslist\" \"macos\"\n"
+        "    }\n"
+        "  }\n"
+        "}\n",
+        spec->name, spec->display);
+    if (len <= 0 || (size_t)len >= sizeof(content)) return -1;
+    return write_file(path, content, 0);
 }
 
 static int32_t g_tool_shift;
@@ -295,8 +312,10 @@ int np_compat_ensure_tool_manifest(void) {
     if (!home) return -1;
 
     char tools_dir[512];
-    snprintf(tools_dir, sizeof(tools_dir),
-             "%s/Library/Application Support/Steam/compatibilitytools.d", home);
+    int n = snprintf(tools_dir, sizeof(tools_dir),
+                     "%s/Library/Application Support/Steam/compatibilitytools.d", home);
+    if (n <= 0 || (size_t)n >= sizeof(tools_dir))
+        return -1;
 
     if (ensure_dir(tools_dir) != 0) {
         NP_WARN("np_compat_ensure_tool_manifest: cannot create %s", tools_dir);
@@ -304,59 +323,75 @@ int np_compat_ensure_tool_manifest(void) {
     }
 
     char tool_dir[512];
-    snprintf(tool_dir, sizeof(tool_dir), "%s/%s", tools_dir, TOOL_DIR_NAME);
-
-    if (ensure_dir(tool_dir) != 0) {
-        NP_WARN("np_compat_ensure_tool_manifest: cannot create %s", tool_dir);
-        return -1;
-    }
-
     char path[512];
     int wrote = 0;
 
-    // Rewritten every launch so field changes take effect. A rescan replaces it in
-    // place rather than adding a second copy.
-    snprintf(path, sizeof(path), "%s/compatibilitytool.vdf", tool_dir);
-    if (write_file(path, TOOL_DECLARATION, 0) == 0) wrote++;
-    else NP_WARN("np_compat_ensure_tool_manifest: failed to write %s", path);
+    for (size_t i = 0; i < TOOL_COUNT; i++) {
+        const np_tool_spec_t *spec = &TOOL_SPECS[i];
 
-    snprintf(path, sizeof(path), "%s/toolmanifest.vdf", tool_dir);
-    if (access(path, F_OK) != 0) {
-        if (write_file(path, TOOL_MANIFEST, 0) == 0) wrote++;
-        else NP_WARN("np_compat_ensure_tool_manifest: failed to write %s", path);
+        n = snprintf(tool_dir, sizeof(tool_dir), "%s/%s", tools_dir, spec->name);
+        if (n <= 0 || (size_t)n >= sizeof(tool_dir) || ensure_dir(tool_dir) != 0) {
+            NP_WARN("np_compat_ensure_tool_manifest: cannot create %s", tool_dir);
+            continue;
+        }
+
+        n = snprintf(path, sizeof(path), "%s/compatibilitytool.vdf", tool_dir);
+        if (n > 0 && (size_t)n < sizeof(path) && write_tool_declaration(path, spec) == 0)
+            wrote++;
+        else
+            NP_WARN("np_compat_ensure_tool_manifest: failed to write %s", path);
+
+        n = snprintf(path, sizeof(path), "%s/toolmanifest.vdf", tool_dir);
+        if (n > 0 && (size_t)n < sizeof(path) && access(path, F_OK) != 0) {
+            if (write_file(path, TOOL_MANIFEST, 0) == 0)
+                wrote++;
+            else
+                NP_WARN("np_compat_ensure_tool_manifest: failed to write %s", path);
+        }
+
+        n = snprintf(path, sizeof(path), "%s/run", tool_dir);
+        if (n > 0 && (size_t)n < sizeof(path) && write_file(path, RUN_SCRIPT, 1) == 0)
+            wrote++;
+        else
+            NP_WARN("np_compat_ensure_tool_manifest: failed to write %s", path);
     }
 
-    // The run script is the shim this project owns and updates, so rewrite it
-    // every launch rather than leaving a stale copy behind.
-    snprintf(path, sizeof(path), "%s/run", tool_dir);
-    if (write_file(path, RUN_SCRIPT, 1) == 0) wrote++;
-    else NP_WARN("np_compat_ensure_tool_manifest: failed to write %s", path);
-
     if (wrote > 0)
-        NP_LOG("np_compat_ensure_tool_manifest: wrote %d file(s) to %s", wrote, tool_dir);
+        NP_LOG("np_compat_ensure_tool_manifest: wrote %d file(s) to %s", wrote, tools_dir);
 
     return 0;
 }
 
-const char *np_compat_tool_dir(void) {
-    static char dir[512];
-    static int resolved = 0;
-
-    if (resolved)
-        return dir[0] ? dir : NULL;
-
-    resolved = 1;
-
+static const char *np_compat_tool_dir_for_name(const char *name) {
+    static char dirs[TOOL_COUNT][512];
+    static int resolved;
     const char *home = np_home_dir();
-    if (!home) {
-        dir[0] = '\0';
+
+    if (!home || !name)
         return NULL;
+
+    if (!resolved) {
+        for (size_t i = 0; i < TOOL_COUNT; i++) {
+            snprintf(dirs[i], sizeof(dirs[i]),
+                     "%s/Library/Application Support/Steam/compatibilitytools.d/%s",
+                     home, TOOL_SPECS[i].name);
+        }
+        resolved = 1;
     }
 
-    snprintf(dir, sizeof(dir),
-             "%s/Library/Application Support/Steam/compatibilitytools.d/%s",
-             home, TOOL_DIR_NAME);
-    return dir;
+    for (size_t i = 0; i < TOOL_COUNT; i++) {
+        if (strcmp(name, TOOL_SPECS[i].name) == 0)
+            return dirs[i];
+    }
+    return NULL;
+}
+
+const char *np_compat_tool_dir(void) {
+    return np_compat_tool_dir_for_name(TOOL_DIR_NAME);
+}
+
+const char *np_compat_tool_install_for_name(const char *name) {
+    return np_compat_tool_dir_for_name(name);
 }
 
 const char *np_compat_tool_commandline(void) {
@@ -491,78 +526,82 @@ void *np_compat_manager(void) {
 }
 
 void np_compat_register_crossover(void *compat_mgr) {
-    static int registered = 0;
-
-    // Every compat query arrives on the instance the properties page reads, which is
-    // the one the tool list has to be enumerated from.
     if (compat_mgr)
         g_manager = compat_mgr;
 
-    if (registered || !compat_mgr || !g_yld_register_tool)
+    if (!compat_mgr || !g_yld_register_tool)
         return;
 
-    // The compatibilitytools.d scan registers this tool from disk at client startup,
-    // so any session that found the manifest there already holds an entry and a
-    // second one is a duplicate under the same name. Only the first session after an
-    // install, when the manifest did not exist to be scanned, has nothing to find.
-    if (np_compat_registered_tool(compat_mgr)) {
-        registered = 1;
-        NP_LOG("np_compat_register_crossover: %s already registered from disk, "
-               "skipping the runtime entry", TOOL_DIR_NAME);
+    uint8_t *base = (uint8_t *)compat_mgr;
+    uint8_t *array = *(uint8_t **)(base + COMPAT_MANAGER_TOOL_ARRAY_OFF);
+    uint32_t count = *(uint32_t *)(base + COMPAT_MANAGER_TOOL_COUNT_OFF);
+    if (!array || count > COMPAT_MANAGER_TOOLS_MAX)
         return;
-    }
 
-    // YldRegisterTool copies a whole entry out of this buffer and keeps the string
-    // pointers as-is, which is why the strings are static and why the buffer carries
-    // headroom for a client that inserted a field. to_oslist=macos passes the
-    // registration gate, from_oslist=windows intersects the app mask so the dropdown
-    // keeps it, and appid 0 marks a manager-local tool the resolver routes to the
-    // local run script.
-    static uint8_t tool[COMPAT_TOOL_STRIDE + 64];
-    memset(tool, 0, sizeof(tool));
-
-    static const char name[]        = TOOL_DIR_NAME;
-    static const char display[]     = TOOL_DISPLAY_NAME;
     static const char from_oslist[] = "windows";
-    static const char to_oslist[]   = "macos";
+    static const char to_oslist[] = "macos";
+    static uint8_t tool_buffers[TOOL_COUNT][COMPAT_TOOL_STRIDE + 64];
 
-    *(uint32_t *)(tool + COMPAT_TOOL_FLAGS_OFF)      = COMPAT_TOOL_FLAG_NO_APP;
-    *(const char **)(tool + COMPAT_TOOL_NAME_OFF)    = name;
-    *(const char **)(tool + COMPAT_TOOL_DISPLAY_OFF) = display;
-    *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_INSTALL_OFF)) =
-        np_compat_tool_dir();
-    *(uint32_t *)(tool + np_compat_tool_off(COMPAT_TOOL_APPID_OFF)) = 0;
-    *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_FROM_OSLIST_OFF)) = from_oslist;
-    *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_TO_OSLIST_OFF))   = to_oslist;
+    for (size_t i = 0; i < TOOL_COUNT; i++) {
+        const np_tool_spec_t *spec = &TOOL_SPECS[i];
+        int found = 0;
 
-    registered = 1;
-    g_yld_register_tool(compat_mgr, tool);
-    NP_LOG("np_compat_register_crossover: registered %s into manager 0x%llx",
-           name, (unsigned long long)(uintptr_t)compat_mgr);
+        for (uint32_t j = 0; j < count; j++) {
+            uint8_t *entry = array + (size_t)j * np_compat_tool_stride();
+            const char *name = *(const char **)(entry + COMPAT_TOOL_NAME_OFF);
+            if (name && strcmp(name, spec->name) == 0) {
+                found = 1;
+                break;
+            }
+        }
+
+        if (found)
+            continue;
+
+        uint8_t *tool = tool_buffers[i];
+        memset(tool, 0, sizeof(tool_buffers[i]));
+
+        *(uint32_t *)(tool + COMPAT_TOOL_FLAGS_OFF) = COMPAT_TOOL_FLAG_NO_APP;
+        *(const char **)(tool + COMPAT_TOOL_NAME_OFF) = spec->name;
+        *(const char **)(tool + COMPAT_TOOL_DISPLAY_OFF) = spec->display;
+        *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_INSTALL_OFF)) =
+            np_compat_tool_dir_for_name(spec->name);
+        *(uint32_t *)(tool + np_compat_tool_off(COMPAT_TOOL_APPID_OFF)) = 0;
+        *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_FROM_OSLIST_OFF)) = from_oslist;
+        *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_TO_OSLIST_OFF)) = to_oslist;
+
+        g_yld_register_tool(compat_mgr, tool);
+        NP_LOG("np_compat_register_crossover: registered %s into manager 0x%llx",
+               spec->name, (unsigned long long)(uintptr_t)compat_mgr);
+
+        base = (uint8_t *)compat_mgr;
+        array = *(uint8_t **)(base + COMPAT_MANAGER_TOOL_ARRAY_OFF);
+        count = *(uint32_t *)(base + COMPAT_MANAGER_TOOL_COUNT_OFF);
+        if (!array || count > COMPAT_MANAGER_TOOLS_MAX)
+            return;
+    }
 }
 
-void *np_compat_registered_tool(void *compat_mgr) {
-    if (!compat_mgr)
+static void *find_registered_tool(void *compat_mgr, const char *wanted) {
+    if (!compat_mgr || !wanted)
         return NULL;
 
     uint8_t *base = (uint8_t *)compat_mgr;
     uint8_t *array = *(uint8_t **)(base + COMPAT_MANAGER_TOOL_ARRAY_OFF);
     uint32_t count = *(uint32_t *)(base + COMPAT_MANAGER_TOOL_COUNT_OFF);
-    if (!array || count > COMPAT_MANAGER_TOOLS_MAX) {
-        // Once, because Steam walks this for every windows-only app as the library
-        // redraws and a count this wrong does not correct itself.
-        static const char once = 0;
-        if (np_log_first_hit(&once, 0))
-            NP_ERR("np_compat_registered_tool: the manager reports %u tool(s) at %p, "
-                   "which is not a list this reads", count, (const void *)array);
+    if (!array || count > COMPAT_MANAGER_TOOLS_MAX)
         return NULL;
-    }
 
     for (uint32_t i = 0; i < count; i++) {
         uint8_t *entry = array + (size_t)i * np_compat_tool_stride();
         const char *name = *(const char **)(entry + COMPAT_TOOL_NAME_OFF);
-        if (name && strcmp(name, TOOL_DIR_NAME) == 0)
+        if (name && strcmp(name, wanted) == 0)
             return entry;
     }
     return NULL;
+}
+
+void *np_compat_registered_tool(void *compat_mgr) {
+    // Keep the historical CrossOver default for automatic Windows-only launches.
+    return find_registered_tool(compat_mgr, TOOL_DIR_NAME);
 }

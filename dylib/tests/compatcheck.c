@@ -207,11 +207,58 @@ static void *stub_find_mapping(void *mgr, uint32_t appid) {
 
 static uint32_t last_priority;
 static uint32_t last_appid;
+static int registered_tool_count;
+static const char *registered_tool_names[2];
+
+static void stub_register_tool(void *mgr, void *tool) {
+    uint8_t *base = (uint8_t *)mgr;
+    uint8_t *array = *(uint8_t **)(base + COMPAT_MANAGER_TOOL_ARRAY_OFF);
+    uint32_t count = *(uint32_t *)(base + COMPAT_MANAGER_TOOL_COUNT_OFF);
+    if (count >= 8) return;
+
+    uint8_t *entry = array + (size_t)count * np_compat_tool_stride();
+    memcpy(entry, tool, np_compat_tool_stride());
+    if (registered_tool_count < 2)
+        registered_tool_names[registered_tool_count++] =
+            *(const char **)(entry + COMPAT_TOOL_NAME_OFF);
+    *(uint32_t *)(base + COMPAT_MANAGER_TOOL_COUNT_OFF) = count + 1;
+}
 static void stub_set_mapping(void *mgr, uint32_t appid, const char *tool_name,
                              const char *config, uint32_t priority) {
     (void)mgr; (void)tool_name; (void)config;
     last_appid = appid;
     last_priority = priority;
+}
+
+static void registration_cases(void) {
+    g_tool_shift = 0;
+    registered_tool_count = 0;
+    registered_tool_names[0] = NULL;
+    registered_tool_names[1] = NULL;
+
+    np_compat_set_register_fn((uintptr_t)stub_register_tool);
+    void *mgr = build_manager(0, -1);
+    np_compat_register_crossover(mgr);
+
+    check(registered_tool_count == 2,
+          "the runtime registers both CrossOver variants when neither was scanned");
+    check(registered_tool_names[0] &&
+          strcmp(registered_tool_names[0], TOOL_DIR_NAME) == 0,
+          "the first runtime tool is the Rosetta compatibility tool");
+    check(registered_tool_names[1] &&
+          strcmp(registered_tool_names[1], TOOL_FEX_DIR_NAME) == 0,
+          "the second runtime tool is the FEX compatibility tool");
+    check(np_compat_registered_tool(mgr) != NULL,
+          "the Rosetta compatibility tool remains the automatic default");
+    check(np_compat_tool_install_for_name(TOOL_DIR_NAME) != NULL,
+          "the Rosetta compatibility tool has a local install path");
+    check(np_compat_tool_install_for_name(TOOL_FEX_DIR_NAME) != NULL,
+          "the FEX compatibility tool has a local install path");
+    check(strcmp(np_compat_tool_install_for_name(TOOL_DIR_NAME),
+                 np_compat_tool_install_for_name(TOOL_FEX_DIR_NAME)) != 0,
+          "Rosetta and FEX use distinct local install paths");
+    check(np_compat_tool_install_for_name("unknown-tool") == NULL,
+          "unknown compatibility tools have no local install path");
 }
 
 static void installed_fn_cases(void) {
@@ -272,6 +319,7 @@ int main(void) {
     oslist_cases();
     enabled_cases();
     manager_cases();
+    registration_cases();
     installed_fn_cases();
 
     if (failures) {
