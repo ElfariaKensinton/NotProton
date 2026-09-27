@@ -155,8 +155,7 @@ request_prefix_rebuild() {
   echo "=== prefix ntdll is $have and this compatibility tool wants $selected_want ===" \
     >> "$log" 2>&1 || true
 
-  if [ "$verb" != run ]; then
-    answer=$(osascript <<APPLESCRIPT 2>/dev/null
+  answer=$(osascript <<APPLESCRIPT 2>/dev/null
 display alert "NotProton: rebuild prefix" message "This game uses a prefix built for a different NotProton compatibility tool. The prefix must be rebuilt before the game can start. Your existing prefix will be kept as a backup." as critical buttons {"Cancel", "Rebuild"} default button "Rebuild" cancel button "Cancel"
 if button returned of result is "Rebuild" then
     return "rebuild"
@@ -164,10 +163,7 @@ else
     return "cancel"
 end if
 APPLESCRIPT
-    ) || answer=cancel
-  else
-    answer=rebuild
-  fi
+  ) || answer=cancel
 
   [ "$answer" = "rebuild" ] || {
     echo "=== user declined prefix rebuild ===" >> "$log" 2>&1 || true
