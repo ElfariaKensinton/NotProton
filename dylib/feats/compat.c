@@ -586,6 +586,8 @@ static void register_tool_entry(void *compat_mgr,
     *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_INSTALL_OFF)) =
         np_compat_tool_dir_named(name);
     *(uint32_t *)(tool + np_compat_tool_off(COMPAT_TOOL_APPID_OFF)) = 0;
+    *(uint32_t *)(tool + np_compat_tool_off(COMPAT_TOOL_PLATFORM_OFF)) = COMPAT_PLATFORM_WINDOWS;
+    *(int32_t *)(tool + COMPAT_TOOL_PRIORITY_OFF) = 0;
     *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_FROM_OSLIST_OFF)) = from_oslist;
     *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_TO_OSLIST_OFF)) = to_oslist;
 
