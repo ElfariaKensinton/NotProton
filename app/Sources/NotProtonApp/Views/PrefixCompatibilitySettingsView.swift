@@ -4,7 +4,7 @@ struct PrefixCompatibilitySettingsView: View {
 
     let prefix: WinePrefix
 
-    @Environment(\\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
     @State private var environmentText: String
     @State private var errorMessage: String?
 
