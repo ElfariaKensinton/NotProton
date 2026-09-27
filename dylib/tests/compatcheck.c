@@ -265,6 +265,13 @@ static void installed_fn_cases(void) {
     last_priority = 0;
     np_compat_map_tool(manager, 7, NULL);
     check(last_priority == 0, "mapping an app to no tool at all reaches the client as nothing");
+
+    const char *rosetta = np_compat_tool_install_for_name("notproton");
+    const char *fex = np_compat_tool_install_for_name("notproton-fex");
+    check(rosetta && fex, "both compatibility tool names have local install paths");
+    check(strcmp(rosetta, fex) != 0, "Rosetta and FEX install paths are distinct");
+    check(np_compat_tool_install_for_name("unknown-tool") == NULL,
+          "unknown compatibility tool names do not resolve locally");
 }
 
 int main(void) {
