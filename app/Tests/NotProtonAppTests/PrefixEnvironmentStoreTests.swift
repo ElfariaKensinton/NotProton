@@ -41,6 +41,23 @@ struct PrefixEnvironmentStoreTests {
         #expect(values["NOTPROTON_EXAMPLE"] == "hello world=again")
     }
 
+    @Test("Names with spaces and non-ASCII characters are rejected")
+    func rejectsNonShellNames() throws {
+        #expect(throws: PrefixEnvironmentStore.ValidationError.invalidLine(
+            number: 1,
+            text: "DXVK_HUD =1"
+        )) {
+            try PrefixEnvironmentStore.parse("DXVK_HUD =1")
+        }
+
+        #expect(throws: PrefixEnvironmentStore.ValidationError.invalidLine(
+            number: 1,
+            text: "ÉNV=1"
+        )) {
+            try PrefixEnvironmentStore.parse("ÉNV=1")
+        }
+    }
+
     @Test("Invalid assignments are rejected with their line number")
     func rejectsInvalidAssignments() throws {
         #expect(throws: PrefixEnvironmentStore.ValidationError.invalidLine(
