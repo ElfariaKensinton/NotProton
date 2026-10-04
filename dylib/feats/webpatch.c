@@ -127,12 +127,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "loadLocal=()=>{try{return localStorage.getItem(envKey)||\"\"}catch(x){return\"\"}}," \
     "saveLocal=v=>{try{if(v)localStorage.setItem(envKey,v);else localStorage.removeItem(envKey)}catch(x){}}, " \
     "env=loadLocal()," \
-    "saveEnv=v=>{saveLocal(v);if(t.unAppID)Promise.resolve(SteamClient.Apps.SpecifyCompatTool(t.unAppID,\"notproton-env-v1:\"+v)).catch(()=>{})};" \
-    ";const E=t.unAppID?(0," RT ".jsx)(\"div\",{className:\"MSCXEnv\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
-    "(0," RT ".jsx)(\"div\",{className:\"MSCXEnvLabel\",children:\"Environment Variables\"})," \
-    "(0," RT ".jsx)(\"div\",{className:\"MSCXEnvHelp\",children:\"One NAME=VALUE pair per line. Lines beginning with # are comments. Applied to this game prefix when it launches.\"})," \
-    "(0," RT ".jsx)(\"textarea\",{id:envId,className:\"MSCXEnvText\",rows:7,spellCheck:false,defaultValue:env,onChange:v=>saveEnv(v.currentTarget.value)})" \
-    "]})}):null," \
+    "saveEnv=v=>{saveLocal(v);if(t.unAppID)Promise.resolve(SteamClient.Apps.SpecifyCompatTool(t.unAppID,\"notproton-env-v1:\"+v)).catch(()=>{})}, " \
     "s=ps=>{const a=o.split(\" \").filter(x=>x&&!ps.some(p=>x.indexOf(p[0]+\"=\")===0))," \
     "v=ps.filter(p=>p[1]).map(p=>p[0]+\"=\"+p[1]);" \
     "if(v.length&&a.indexOf(\"%command%\")<0)v.push(\"%command%\");" \
@@ -182,7 +177,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "selectedOption:sw?(0===cf.indexOf(F)?cf.slice(F.length):\"2.0\"):\"\"," \
     "onChange:v=>s(v.data?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"1\"],[\"DXMT_CONFIG\",F+v.data]]" \
     ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",\"\"]])})},\"usf\")" \
-    "E," \
+    "t.unAppID?(0," RT ".jsx)(\"div\",{className:\"MSCXEnv\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
+    "(0," RT ".jsx)(\"div\",{className:\"MSCXEnvLabel\",children:\"Environment Variables\"}),(0," RT ".jsx)(\"div\",{className:\"MSCXEnvHelp\",children:\"One NAME=VALUE pair per line. Lines beginning with # are comments. Applied to this game prefix when it launches.\"}),(0," RT ".jsx)(\"textarea\",{id:envId,className:\"MSCXEnvText\",rows:7,spellCheck:false,defaultValue:env,onChange:v=>saveEnv(v.currentTarget.value)})]})}):null," \
     "]})})}"
 
 #define NP_CX_OPTIONS_COMPONENT \
