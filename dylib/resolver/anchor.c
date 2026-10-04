@@ -21,11 +21,12 @@ static const char *const data_segs[] = {"__DATA_CONST", "__DATA"};
 static uintptr_t adrp_target(uintptr_t pc, uint32_t w, int *reg) {
     if ((w & 0x9F000000u) != 0x90000000u) return 0;
     *reg = (int)(w & 0x1Fu);
-    uint32_t lo = (w >> 29) & 3u;
-    uint32_t hi = (w >> 5)  & 0x7FFFFu;
-    int64_t imm = (int64_t)((hi << 2) | lo);
-    imm = (imm << 43) >> 43;
-    return (pc & ~(uintptr_t)0xFFF) + (uintptr_t)(imm << 12);
+    uint32_t lo  = (w >> 29) & 3u;
+    uint32_t hi  = (w >> 5)  & 0x7FFFFu;
+    uint32_t raw = (hi << 2) | lo;
+    // Sign-extend 21 bits without signed left-shift overflow.
+    int64_t imm = (int64_t)(raw ^ 0x100000u) - 0x100000;
+    return (pc & ~(uintptr_t)0xFFF) + (uintptr_t)(imm * 0x1000);
 }
 
 // Decode ADD (immediate) with shift=0 whose Rn matches `expected_rn`.
@@ -49,8 +50,9 @@ static uintptr_t ldr_slot_addr(uint32_t w, int expected_rn, uintptr_t page) {
 
 static uintptr_t branch26_target(uintptr_t pc, uint32_t w, uint32_t opcode) {
     if ((w & 0xFC000000u) != opcode) return 0;
-    int64_t imm = (int64_t)(w & 0x03FFFFFFu);
-    imm = (imm << 38) >> 38;
+    uint32_t raw = w & 0x03FFFFFFu;
+    // Sign-extend 26 bits without signed left-shift overflow.
+    int64_t imm = (int64_t)(raw ^ 0x2000000u) - 0x2000000;
     return pc + (uintptr_t)(imm * 4);
 }
 
