@@ -32,11 +32,21 @@ function panel(emit, form) {
     : expand(raw).replace(/;$/, '');
   const f = FORMS[form];
   const written = [];
+  const envWritten = [];
+  const storage = new Map();
+  global.localStorage = {
+    getItem: key => storage.has(key) ? storage.get(key) : null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: key => storage.delete(key),
+  };
   const SteamClient = {
-    Apps: { SetAppLaunchOptions: (appid, opts) => written.push({ appid, opts }) },
+    Apps: {
+      SetAppLaunchOptions: (appid, opts) => written.push({ appid, opts }),
+      SpecifyCompatTool: (appid, tool) => envWritten.push({ appid, tool }),
+    },
   };
   const build = new Function(f.react, f.barrel, 'SteamClient', src + '\nreturn MSCXOpts;');
-  return { render: build(react, barrel, SteamClient), written };
+  return { render: build(react, barrel, SteamClient), written, envWritten };
 }
 
 // Function components are resolved rather than recorded, so a check sees the nodes the

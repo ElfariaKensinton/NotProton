@@ -108,6 +108,7 @@ static const char *kind_name(np_match_kind_t k) {
         case NP_MATCH_INSN_PAIR_IN_FN:   return "insn_pair";
         case NP_MATCH_AOB:               return "aob";
         case NP_MATCH_CALL_TARGET:       return "call_target";
+        case NP_MATCH_CALLS:             return "calls";
         default:                          return "none";
     }
 }
@@ -149,6 +150,15 @@ static const struct { uint64_t build; const char *type_name; uintptr_t vptr; } e
     {1789086785, "40CCompatManager_SpecifyCompatTool_Request",     0x16ad2c0},
     {1789086785, "41CCompatManager_SpecifyCompatTool_Response",    0x16ad370},
     {1789086785, "40CCompatManager_StateChanged_Notification",     0x16ad420},
+
+    {1790904859, "14CCompatManager",                              0x1743d20},
+    {1790904859, "21CMsgCompatManagerTool",                       0x16acff0},
+    {1790904859, "22CMsgCompatManagerAlias",                      0x16ad0a0},
+    {1790904859, "37CCompatManager_GetCompatTools_Request",        0x16ad150},
+    {1790904859, "38CCompatManager_GetCompatTools_Response",       0x16ad200},
+    {1790904859, "40CCompatManager_SpecifyCompatTool_Request",     0x16ad2b0},
+    {1790904859, "41CCompatManager_SpecifyCompatTool_Response",    0x16ad360},
+    {1790904859, "40CCompatManager_StateChanged_Notification",     0x16ad410},
 };
 
 static int run_rtti(const struct mach_header_64 *mh, intptr_t slide,
@@ -263,9 +273,10 @@ static int check_aob_fallback(const char *path) {
         return 1;
     }
     for (int i = 0; i < db.sig_count; i++) {
-        db.signatures[i].anchor.str[0] = '\001';
-        db.signatures[i].anchor.str[1] = '\0';
-        db.signatures[i].anchor.va     = 0;
+        db.signatures[i].anchor.str[0]      = '\001';
+        db.signatures[i].anchor.str[1]      = '\0';
+        db.signatures[i].anchor.va          = 0;
+        db.signatures[i].anchor.calls[0][0] = '\001';
     }
 
     int bad = 0, checked = 0;

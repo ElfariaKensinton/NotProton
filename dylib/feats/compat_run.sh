@@ -335,6 +335,32 @@ migrate_user_paths() {
   done
 }
 
+load_prefix_environment() {
+  env_file="$STEAM_COMPAT_DATA_PATH/notproton-environment"
+  [ -r "$env_file" ] || return 0
+  while IFS= read -r env_line || [ -n "$env_line" ]; do
+    case "$env_line" in
+      ''|\#*) continue ;;
+    esac
+    case "$env_line" in
+      *=*) ;;
+      *) echo "=== ignored invalid environment setting: $env_line ===" >> "$log" 2>&1 || true; continue ;;
+    esac
+    env_name=${env_line%%=*}
+    env_value=${env_line#*=}
+    case "$env_name" in
+      ''|[0-9]*|*[!A-Za-z0-9_]*) echo "=== ignored invalid environment name: $env_name ===" >> "$log" 2>&1 || true; continue ;;
+    esac
+    case "$env_name" in
+      CX_ROOT|CX_HOME|PATH|WINELOADER|WINESERVER|WINEDLLPATH|WINEPREFIX|STEAM_COMPAT_DATA_PATH|STEAM_COMPAT_INSTALL_PATH|STEAM_COMPAT_APP_ID|STEAM_COMPAT_CLIENT_INSTALL_PATH|SteamAppId|SteamGameId)
+        echo "=== ignored managed environment name: $env_name ===" >> "$log" 2>&1 || true
+        continue
+        ;;
+    esac
+    export "$env_name=$env_value"
+  done < "$env_file"
+}
+
 lay_out_proton_profile() {
   users="$WINEPREFIX/drive_c/users"
   if [ -d "$users/crossover" ] && [ ! -L "$users/crossover" ]; then
@@ -405,6 +431,7 @@ echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   export WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx"
   mkdir -p "$WINEPREFIX"
+  load_prefix_environment
   msync_from=environment
   if [ -z "$WINEMSYNC" ] && [ -r "$STEAM_COMPAT_DATA_PATH/notproton-msync" ]; then
     WINEMSYNC=$(tr -d ' \t\n' \
@@ -545,6 +572,8 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
 fi
 
 export WINEDEBUG="${WINEDEBUG:-err+all,fixme-all}"
+# Reapply per-prefix values after bridge configuration.
+load_prefix_environment
 trap - EXIT
 echo "launch_args=$launch_args" >> "$log" 2>&1 || true
 [ -z "$launch_env" ] || echo "launch_env=$launch_env" >> "$log" 2>&1 || true
@@ -824,7 +853,9 @@ else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
 set -- --args "$shim_exe" "$@"
-for name in $(env | sed -nE 's/^(Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
+# Keep Steam's full environment contract when the game is re-launched
+# through the macOS launcher bundle, including all STEAM_COMPAT_* values.
+for name in $(env | sed -nE 's/^(Steam[A-Za-z0-9]*|STEAM_[A-Za-z0-9_]+|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p' | sort -u); do
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"
@@ -839,11 +870,6 @@ set -- \
   --env WINEPREFIX="$WINEPREFIX" \
   --env WINEDEBUG="$WINEDEBUG" \
   --env PATH="$PATH" \
-  --env STEAM_COMPAT_DATA_PATH="$STEAM_COMPAT_DATA_PATH" \
-  --env STEAM_COMPAT_INSTALL_PATH="$STEAM_COMPAT_INSTALL_PATH" \
-  --env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_COMPAT_CLIENT_INSTALL_PATH" \
-  --env STEAM_COMPAT_APP_ID="$STEAM_COMPAT_APP_ID" \
-  --env STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES" \
   --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"

@@ -110,12 +110,29 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".MSCXPanel .MSCXRow{display:flex;flex-direction:row;padding:9px;margin:0;" \
     "color:#dfe3e6;background:rgba(59,63,72,.5);border-radius:3px}" \
     ".MSCXPanel .MSCXRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
-    ".MSCXNoBottomGap{margin-bottom:0}\""
+    ".MSCXNoBottomGap{margin-bottom:0}" \
+    ".MSCXEnv{padding:10px;margin-top:10px;color:#dfe3e6;background:rgba(59,63,72,.5);border-radius:3px}" \
+    ".MSCXEnvLabel{font-weight:600;margin-bottom:4px}" \
+    ".MSCXEnvHelp{color:#aeb4bd;margin-bottom:7px;font-size:12px}" \
+    ".MSCXEnvText{box-sizing:border-box;width:100%;min-height:150px;padding:8px;resize:vertical;" \
+    "font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#e7e9ec;background:#202329;" \
+    "border:1px solid #4b5260;border-radius:3px;outline:none}\""
 
 #define NP_CX_OPTIONS_BODY(ARG, RT, BARREL) \
     ARG "=>{" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
     "g=k=>{const p=o.split(\" \").find(x=>x.indexOf(k+\"=\")===0);return p?p.slice(k.length+1):\"\"}," \
+    "envId=\"MSCXEnv_\"+t.unAppID," \
+    "envKey=\"NotProton.Environment.\"+t.unAppID," \
+    "loadLocal=()=>{try{return localStorage.getItem(envKey)||\"\"}catch(x){return\"\"}}," \
+    "saveLocal=v=>{try{if(v)localStorage.setItem(envKey,v);else localStorage.removeItem(envKey)}catch(x){}}, " \
+    "env=loadLocal()," \
+    "saveEnv=v=>{saveLocal(v);if(t.unAppID)Promise.resolve(SteamClient.Apps.SpecifyCompatTool(t.unAppID,\"notproton-env-v1:\"+v)).catch(()=>{})}," \
+    "E=t.unAppID?(0," RT ".jsx)(\"div\",{className:\"MSCXEnv\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
+    "(0," RT ".jsx)(\"div\",{className:\"MSCXEnvLabel\",children:\"Environment Variables\"})," \
+    "(0," RT ".jsx)(\"div\",{className:\"MSCXEnvHelp\",children:\"One NAME=VALUE pair per line. Lines beginning with # are comments. Applied to this game prefix when it launches.\"})," \
+    "(0," RT ".jsx)(\"textarea\",{id:envId,className:\"MSCXEnvText\",rows:7,spellCheck:false,defaultValue:env,onChange:v=>saveEnv(v.currentTarget.value)})" \
+    "]})}):null," \
     "s=ps=>{const a=o.split(\" \").filter(x=>x&&!ps.some(p=>x.indexOf(p[0]+\"=\")===0))," \
     "v=ps.filter(p=>p[1]).map(p=>p[0]+\"=\"+p[1]);" \
     "if(v.length&&a.indexOf(\"%command%\")<0)v.push(\"%command%\");" \
@@ -165,6 +182,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "selectedOption:sw?(0===cf.indexOf(F)?cf.slice(F.length):\"2.0\"):\"\"," \
     "onChange:v=>s(v.data?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"1\"],[\"DXMT_CONFIG\",F+v.data]]" \
     ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",\"\"]])})},\"usf\")" \
+    "E," \
     "]})})}"
 
 #define NP_CX_OPTIONS_COMPONENT \
@@ -285,11 +303,19 @@ static int has_suffix(const char *s, const char *suf) {
     return ls >= lf && memcmp(s + ls - lf, suf, lf) == 0;
 }
 
+static const char *inside_steamui(const char *path) {
+    const char *at = strstr(path, "/steamui/");
+    if (at) return at + sizeof("/steamui/") - 1;
+    if (strncmp(path, "steamui/", sizeof("steamui/") - 1) == 0)
+        return path + sizeof("steamui/") - 1;
+    return NULL;
+}
 int np_webpatch_should_patch(const char *path) {
-    return path
-        && strstr(path, "steamui") != NULL
-        && strstr(path, "/chunk~") != NULL
-        && has_suffix(path, ".js");
+    if (!path || !has_suffix(path, ".js")) return 0;
+    const char *rest = inside_steamui(path);
+    if (!rest) return 0;
+    return strncmp(rest, "localization/", sizeof("localization/") - 1) != 0
+        && strncmp(rest, "libraries/", sizeof("libraries/") - 1) != 0;
 }
 
 char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,

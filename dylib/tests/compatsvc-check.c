@@ -6,11 +6,15 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <mach-o/loader.h>
+#include <limits.h>
 
 // Stubs for the compat layer, set by each test before calling a handler. The check owns
 // both sides, so what the handler includes and labels is under test, not the compat answers.
 
 static uint8_t fake_manager[0x800];
+static char test_home[PATH_MAX];
+const char *np_home_dir(void) { return test_home; }
+
 static uint8_t fake_entries[8 * 0x200];
 static int32_t stub_tool_shift;
 static uint32_t stub_enabled_off_val;
@@ -610,6 +614,83 @@ static void specify_cases(void) {
     check(last_map_appid == 0, "a request with no appid has-bit reads as appid zero");
 }
 
+static void environment_file_cases(void) {
+    reset();
+
+    char root[] = "/tmp/notproton-compatsvc-XXXXXX";
+    char *dir = mkdtemp(root);
+    check(dir != NULL, "the environment test creates a temporary home");
+    if (!dir) return;
+
+    int n = snprintf(test_home, sizeof test_home, "%s", dir);
+    check(n >= 0 && (size_t)n < sizeof test_home, "the environment test sets its home");
+    if (n < 0 || (size_t)n >= sizeof test_home) {
+        rmdir(dir);
+        return;
+    }
+
+    char steam[PATH_MAX];
+    char steamapps[PATH_MAX];
+    char vdf[PATH_MAX];
+    char env_file[PATH_MAX];
+    snprintf(steam, sizeof steam, "%s/Library/Application Support/Steam", test_home);
+    snprintf(steamapps, sizeof steamapps, "%s/steamapps", steam);
+    snprintf(vdf, sizeof vdf, "%s/libraryfolders.vdf", steamapps);
+    snprintf(env_file, sizeof env_file, "%s/compatdata/42/notproton-environment", steamapps);
+
+    check(mkdir_p(steamapps) == 0, "the environment test creates steamapps");
+
+    FILE *f = fopen(vdf, "w");
+    check(f != NULL, "the environment test creates libraryfolders.vdf");
+    if (f) {
+        fputs(
+            "\"libraryfolders\"\n"
+            "{\n"
+            "    \"0\"\n"
+            "    {\n"
+            "        \"path\" \"" , f);
+        fputs(steam, f);
+        fputs("\"\n        \"apps\"\n        {\n            \"42\" \"1\"\n        }\n    }\n}\n", f);
+        fclose(f);
+    }
+
+    int rc = specify_compat_tool(
+        build_specify_request(SPECIFY_HAS_APPID, 42, "notproton-env-v1:DXVK_HUD=1\nWINEDEBUG=-all"),
+        (uintptr_t)response_buf);
+    check(rc == RESULT_OK, "the environment sentinel is accepted without a manager");
+    FILE *saved = fopen(env_file, "r");
+    check(saved != NULL, "the environment file is created in compatdata");
+    if (saved) {
+        char value[256] = {0};
+        size_t used = fread(value, 1, sizeof value - 1, saved);
+        fclose(saved);
+        value[used] = '\0';
+        check(strcmp(value, "DXVK_HUD=1\nWINEDEBUG=-all") == 0,
+              "the environment file keeps multiline contents");
+    }
+
+    rc = specify_compat_tool(
+        build_specify_request(SPECIFY_HAS_APPID, 42, "notproton-env-v1:"),
+        (uintptr_t)response_buf);
+    check(rc == RESULT_OK, "clearing the environment sentinel is accepted");
+    check(access(env_file, F_OK) != 0, "clearing removes the environment file");
+
+    unlink(vdf);
+    char compatdata[PATH_MAX];
+    snprintf(compatdata, sizeof compatdata, "%s/compatdata", steamapps);
+    rmdir(compatdata);
+    rmdir(steamapps);
+    rmdir(steam);
+    char library[PATH_MAX];
+    snprintf(library, sizeof library, "%s/Library/Application Support", test_home);
+    rmdir(library);
+    char libroot[PATH_MAX];
+    snprintf(libroot, sizeof libroot, "%s/Library", test_home);
+    rmdir(libroot);
+    rmdir(dir);
+    test_home[0] = '\0';
+}
+
 static void no_manager_cases(void) {
     // When np_compat_manager returns NULL the handlers must cope.
     reset();
@@ -711,6 +792,7 @@ int main(void) {
     fallback_cases();
     active_flag_cases();
     specify_cases();
+    environment_file_cases();
     no_manager_cases();
     routes_state_cases();
     string_field_cases();
