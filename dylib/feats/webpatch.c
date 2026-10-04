@@ -127,8 +127,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "loadLocal=()=>{try{return localStorage.getItem(envKey)||\"\"}catch(x){return\"\"}}," \
     "saveLocal=v=>{try{if(v)localStorage.setItem(envKey,v);else localStorage.removeItem(envKey)}catch(x){}}, " \
     "env=loadLocal()," \
-    "saveEnv=v=>{saveLocal(v);if(t.unAppID)Promise.resolve(SteamClient.Apps.SpecifyCompatTool(t.unAppID,\"notproton-env-v1:\"+v)).catch(()=>{})}," \
-    "E=t.unAppID?(0," RT ".jsx)(\"div\",{className:\"MSCXEnv\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
+    "saveEnv=v=>{saveLocal(v);if(t.unAppID)Promise.resolve(SteamClient.Apps.SpecifyCompatTool(t.unAppID,\"notproton-env-v1:\"+v)).catch(()=>{})};" \
+    ";const E=t.unAppID?(0," RT ".jsx)(\"div\",{className:\"MSCXEnv\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
     "(0," RT ".jsx)(\"div\",{className:\"MSCXEnvLabel\",children:\"Environment Variables\"})," \
     "(0," RT ".jsx)(\"div\",{className:\"MSCXEnvHelp\",children:\"One NAME=VALUE pair per line. Lines beginning with # are comments. Applied to this game prefix when it launches.\"})," \
     "(0," RT ".jsx)(\"textarea\",{id:envId,className:\"MSCXEnvText\",rows:7,spellCheck:false,defaultValue:env,onChange:v=>saveEnv(v.currentTarget.value)})" \
