@@ -71,6 +71,7 @@ static int anchor_targets_function_entry(np_match_kind_t kind) {
         case NP_MATCH_STRING:
         case NP_MATCH_VTABLE_SLOT:
         case NP_MATCH_CALL_TARGET:
+        case NP_MATCH_CALLS:
             return 1;
         case NP_MATCH_NONE:
         case NP_MATCH_INSN_AFTER_STRING:

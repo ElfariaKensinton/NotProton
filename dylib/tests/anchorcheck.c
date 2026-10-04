@@ -108,6 +108,7 @@ static const char *kind_name(np_match_kind_t k) {
         case NP_MATCH_INSN_PAIR_IN_FN:   return "insn_pair";
         case NP_MATCH_AOB:               return "aob";
         case NP_MATCH_CALL_TARGET:       return "call_target";
+        case NP_MATCH_CALLS:             return "calls";
         default:                          return "none";
     }
 }
@@ -263,9 +264,10 @@ static int check_aob_fallback(const char *path) {
         return 1;
     }
     for (int i = 0; i < db.sig_count; i++) {
-        db.signatures[i].anchor.str[0] = '\001';
-        db.signatures[i].anchor.str[1] = '\0';
-        db.signatures[i].anchor.va     = 0;
+        db.signatures[i].anchor.str[0]      = '\001';
+        db.signatures[i].anchor.str[1]      = '\0';
+        db.signatures[i].anchor.va          = 0;
+        db.signatures[i].anchor.calls[0][0] = '\001';
     }
 
     int bad = 0, checked = 0;
@@ -316,7 +318,7 @@ static int pick_live(const dbcheck_t *dbs, int n) {
     return best_hits ? best : -1;
 }
 
-static int report_db(const dbcheck_t *db, int is_live) {
+static int report_db(const dbcheck_t *db, int is_live, int misses_excused) {
     int bad = 0;
 
     printf("%s  build %llu%s\n", db->path, (unsigned long long)db->build,
@@ -330,7 +332,7 @@ static int report_db(const dbcheck_t *db, int is_live) {
         else if (!r->anchor)                   { verdict = (r->has_pattern && r->aob)
                                                              ? "ANCHOR FAILED (aob resolves)"
                                                              : "ANCHOR FAILED";
-                                                 if (is_live) bad++; }
+                                                 if (!misses_excused) bad++; }
         else if (!is_live)                     { verdict = (r->has_pattern && r->aob && r->aob != r->anchor)
                                                              ? "stale pattern hit elsewhere"
                                                              : "resolved";           }
@@ -423,7 +425,7 @@ int main(int argc, char **argv) {
     int live = pick_live(dbs, n);
 
     int bad = 0;
-    for (int i = 0; i < n; i++) bad += report_db(&dbs[i], i == live);
+    for (int i = 0; i < n; i++) bad += report_db(&dbs[i], i == live, live >= 0 && i != live);
     bad += report_cross_db(dbs, n);
 
     if (live < 0) {
