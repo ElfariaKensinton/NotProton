@@ -176,7 +176,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:U," \
     "selectedOption:sw?(0===cf.indexOf(F)?cf.slice(F.length):\"2.0\"):\"\"," \
     "onChange:v=>s(v.data?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"1\"],[\"DXMT_CONFIG\",F+v.data]]" \
-    ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",\"\"]])})},\"usf\")" \
+    ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",\"\"]])})},\"usf\")," \
     "t.unAppID?(0," RT ".jsx)(\"div\",{className:\"MSCXEnv\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
     "(0," RT ".jsx)(\"div\",{className:\"MSCXEnvLabel\",children:\"Environment Variables\"}),(0," RT ".jsx)(\"div\",{className:\"MSCXEnvHelp\",children:\"One NAME=VALUE pair per line. Lines beginning with # are comments. Applied to this game prefix when it launches.\"}),(0," RT ".jsx)(\"textarea\",{id:envId,className:\"MSCXEnvText\",rows:7,spellCheck:false,defaultValue:env,onChange:v=>saveEnv(v.currentTarget.value)})]})}):null," \
     "]})})}"
