@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 21486)
-Total output lines: 2179
-
 #!/bin/sh
 # notproton CrossOver compatibility tool shim
 set -e
@@ -770,7 +767,643 @@ migrate_user_paths() {
       fi
     fi
     if [ ! -e "$old" ] && [ ! -L "$old" ]; then
-      mkdir -p "${old%/*}" 2>/dev/null || tru…6486 tokens truncated…"; do
+      mkdir -p "${old%/*}" 2>/dev/null || true
+      ln -s "$link" "$old" 2>/dev/null \
+        || echo "=== $old_rel could not be aliased onto $new_rel ===" >> "$log" 2>&1 \
+        || true
+    elif [ -L "$old" ] && [ "$(readlink "$old")" != "$link" ]; then
+      rm -f "$old" 2>/dev/null || true
+      ln -s "$link" "$old" 2>/dev/null \
+        || echo "=== $old_rel could not be aliased onto $new_rel ===" >> "$log" 2>&1 \
+        || true
+    fi
+  done
+  [ "$migration_failed" -eq 0 ]
+}
+
+lay_out_proton_profile() {
+  users="${1:-$WINEPREFIX}/drive_c/users"
+  if [ -d "$users/crossover" ] && [ ! -L "$users/crossover" ]; then
+    echo "=== prefix predates the steamuser layout, rebuild it for cloud saves ===" \
+      >> "$log" 2>&1 || true
+    return 0
+  fi
+  profile="$users/steamuser"
+  if [ -L "$profile" ]; then
+    echo "=== the profile is a link, rebuild the prefix for cloud saves ===" \
+      >> "$log" 2>&1 || true
+    return 0
+  fi
+  mkdir -p "$profile" 2>/dev/null || return 0
+  for folder in Documents Desktop Downloads Music Pictures Videos Templates \
+      AppData/Local AppData/Roaming; do
+    mkdir -p "$profile/$folder" 2>/dev/null || true
+  done
+  migrate_user_paths "$profile" || return 1
+  if [ -L "$users/crossover" ] && [ ! -e "$users/crossover" ]; then
+    rm -f "$users/crossover" 2>/dev/null || true
+  fi
+  if [ ! -e "$users/crossover" ] \
+    && ln -s steamuser "$users/crossover" 2>/dev/null; then
+    echo "=== pointed crossover at steamuser ===" >> "$log" 2>&1 || true
+  fi
+}
+
+controller_ids() {
+  printf '%s\n' "$1" | tr ',' '\n' | tr 'A-F' 'a-f' \
+    | sed -n 's/^[[:space:]]*0x\([0-9a-f]\{4\}\)\/0x\([0-9a-f]\{4\}\)[[:space:]]*$/\1\/\2/p' \
+    | sort -u
+}
+
+ids_without() {
+  printf '%s\n' "$2" -- "$1" \
+    | awk '$0 == "--" { s = 1; next } !s { b[$0]; next } $0 != "" && !($0 in b)'
+}
+
+hidraw_lines() {
+  printf '%s\n' "$2" | while read -r id; do
+    [ -n "$id" ] || continue
+    if [ "$1" = add ]; then
+      printf '%s\r\n' "[HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\WineBus\\Devices\\$id]" \
+        '"Hidraw"=dword:00000000' ''
+    else
+      printf '%s\r\n' "[-HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\WineBus\\Devices\\$id]" ''
+    fi
+  done
+}
+
+write_owned_controllers() {
+  if printf '%s\n' "$1" | sed '/^$/d' | sort -u > "$controllers_file.new" \
+    && mv -f "$controllers_file.new" "$controllers_file"; then
+    return 0
+  fi
+  rm -f "$controllers_file.new"
+  return 1
+}
+
+# Proton hides the controllers that Steam Input handles from the Wine process. CrossOver
+# still reads a few directly (DualSense, DualShock 4, Switch 1 Pro Controller and Joy-Cons),
+# so Hidraw=0 hides those too. The Switch controllers get Hidraw=0 even when Steam Input
+# is off, to avoid silently breaking controller support in most games.
+plan_hidden_controllers() {
+  controllers_file="$STEAM_COMPAT_DATA_PATH/notproton-hidden-controllers"
+  controllers_add=""
+  controllers_remove=""
+  controllers_wanted=""
+  [ -n "$STEAM_COMPAT_DATA_PATH" ] && [ ! -L "$controllers_file" ] || return 1
+  owned=""
+  [ ! -f "$controllers_file" ] || owned=$(sed -n '/^[0-9a-f]\{4\}\/[0-9a-f]\{4\}$/p' "$controllers_file")
+  in_registry=""
+  [ ! -f "$WINEPREFIX/system.reg" ] || in_registry=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
+    | sed -n 's/^\[system\\\\controlset001\\\\services\\\\winebus\\\\devices\\\\\([0-9a-f]\{4\}\/[0-9a-f]\{4\}\)\].*/\1/p' \
+    | sort -u)
+  if [ "$NOTPROTON_RAW_CONTROLLERS" != "1" ]; then
+    controllers_wanted=$(ids_without "$(controller_ids "$SDL_GAMECONTROLLER_IGNORE_DEVICES")" \
+      "$(controller_ids "$SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT")")
+    controllers_wanted=$(printf '%s\n' "$controllers_wanted" 057e/2006 057e/2007 057e/2009 | sed '/^$/d' | sort -u)
+    # Steam sends install scripts no ignore list. Keep the game's hidden controllers instead of clearing them.
+    if [ "$verb" = run ]; then
+      controllers_wanted=$(printf '%s\n' "$controllers_wanted" "$owned" | sed '/^$/d' | sort -u)
+    fi
+    controllers_wanted=$(ids_without "$controllers_wanted" "$(ids_without "$in_registry" "$owned")")
+  fi
+  controllers_add=$(ids_without "$controllers_wanted" "$in_registry")
+  controllers_remove=$(ids_without "$owned" "$controllers_wanted")
+  write_owned_controllers "$owned
+$controllers_wanted"
+}
+
+# Sets Wine's DisableHidraw for games with "Disable hidraw" checked. When it's
+# unchecked, the value is removed only if NotProton set it.
+plan_disable_hidraw() {
+  hidraw_file="$STEAM_COMPAT_DATA_PATH/notproton-disable-hidraw"
+  hidraw_value=""
+  [ -n "$STEAM_COMPAT_DATA_PATH" ] && [ ! -L "$hidraw_file" ] || return 1
+  hidraw_set=""
+  [ ! -f "$WINEPREFIX/system.reg" ] || hidraw_set=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
+    | awk '/^\[/ { s = index($0, "[system\\\\controlset001\\\\services\\\\winebus]") == 1; next }
+      s && $0 == "\"disablehidraw\"=dword:00000001" { print 1; exit }')
+  if [ "$NOTPROTON_DISABLE_HIDRAW" = "1" ]; then
+    [ -n "$hidraw_set" ] || hidraw_value='"DisableHidraw"=dword:00000001'
+  elif [ -f "$hidraw_file" ] && [ -n "$hidraw_set" ]; then
+    hidraw_value='"DisableHidraw"=-'
+  fi
+}
+
+winebus_lines() {
+  [ -n "$hidraw_value" ] || return 0
+  printf '%s\r\n' '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus]' "$hidraw_value" ''
+}
+
+# High Resolution doubles LogPixels and turning it off halves it
+plan_logpixels() {
+  dpi_value=""
+  new_dpi=""
+  read -r retina_was dpi <<EOF
+$({ [ ! -f "$WINEPREFIX/user.reg" ] || tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/user.reg"; } | awk '
+  /^\[/ { s = 0
+    if (index($0, "[software\\\\wine\\\\mac driver]") == 1) s = 1
+    else if (index($0, "[control panel\\\\desktop]") == 1) s = 2
+    next }
+  s == 1 && $0 ~ /^"retinamode"="[yt1]/ { r = 1 }
+  s == 2 && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { d = substr($0, 19) }
+  END { print r + 0, d }')
+EOF
+  [ -n "$dpi" ] || [ ! -f "$WINEPREFIX/system.reg" ] || dpi=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
+    | awk '/^\[/ { s = index($0, "[system\\\\controlset001\\\\hardware profiles\\\\current\\\\software\\\\fonts]") == 1; next }
+      s && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { print substr($0, 19); exit }')
+  dpi=$((0x${dpi:-0}))
+  [ "$dpi" -gt 0 ] || dpi=96
+  if [ "$NOTPROTON_RETINA" = "1" ]; then
+    [ "$retina_was" = 1 ] && [ "$dpi" -ge 110 ] || [ "$dpi" -gt 2147483647 ] || new_dpi=$((dpi * 2))
+  elif [ "$retina_was" = 1 ]; then
+    new_dpi=$((dpi / 2))
+    [ "$new_dpi" -ge 96 ] || new_dpi=96
+  fi
+  [ -z "$new_dpi" ] || [ "$new_dpi" -eq "$dpi" ] || dpi_value=$(printf '"LogPixels"=dword:%08x' "$new_dpi")
+}
+
+video_lines() {
+  [ "$verb" = waitforexitandrun ] || return 0
+  printf '%s\r\n' '[HKEY_CURRENT_USER\Software\Wine\Mac Driver]' "$retina_line" ''
+  [ -n "$dpi_value" ] || return 0
+  printf '%s\r\n' '[HKEY_CURRENT_USER\Control Panel\Desktop]' "$dpi_value" ''
+}
+
+import_prefix_settings() {
+  if [ "$NOTPROTON_RETINA" = "1" ]; then
+    retina_line='"RetinaMode"="y"'
+  else
+    retina_line='"RetinaMode"=-'
+  fi
+  dpi_value=""
+  controllers_planned=0
+  if plan_hidden_controllers 2>/dev/null; then
+    controllers_planned=1
+  else
+    controllers_add=""
+    controllers_remove=""
+    echo "=== could not track the hidden controllers, leaving them as they are ===" >> "$log" 2>&1 || true
+  fi
+  hidraw_planned=0
+  if plan_disable_hidraw 2>/dev/null; then
+    hidraw_planned=1
+    if [ "$NOTPROTON_DISABLE_HIDRAW" = "1" ] && [ -n "$hidraw_value" ]; then
+      : > "$hidraw_file" 2>/dev/null || hidraw_value=""
+    fi
+  else
+    hidraw_value=""
+    echo "=== could not track DisableHidraw, leaving it as it is ===" >> "$log" 2>&1 || true
+  fi
+  # Steam sends install scripts no launch options, so they keep the game's video settings.
+  if [ "$verb" = waitforexitandrun ]; then
+    plan_logpixels 2>/dev/null || dpi_value=""
+  fi
+  settings_file=$(mktemp "$WINEPREFIX/drive_c/notproton-settings.XXXXXX" 2>/dev/null) \
+    || settings_file=""
+  if [ -z "$settings_file" ] || ! { printf '%s\r\n' \
+      'Windows Registry Editor Version 5.00' '' \
+      '[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\AeDebug]' '"Auto"="0"' '' \
+      '[HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug]' '"Auto"="0"' '' \
+      '[HKEY_CURRENT_USER\Software\Wine\WineDbg]' '"ShowCrashDialog"=dword:00000000' '' \
+      && video_lines && printf '%s\r\n' \
+      '[HKEY_LOCAL_MACHINE\Software\Classes\steam]' '"URL Protocol"=""' '' \
+      '[HKEY_LOCAL_MACHINE\Software\Classes\steam\shell\open\command]' \
+      '@="\"C:\\Program Files (x86)\\Steam\\steam.exe\" \"%1\""' '' \
+      && hidraw_lines add "$controllers_add" && hidraw_lines remove "$controllers_remove" \
+      && winebus_lines; } \
+      > "$settings_file" 2>/dev/null; then
+    [ -z "$settings_file" ] || rm -f "$settings_file"
+    echo "=== could not write the prefix settings, launching without them ===" >> "$log" 2>&1 || true
+    # the bridge staging still needs a built prefix
+    without_lock_fds "$WINELOADER" wineboot --init >> "$log" 2>&1 || true
+    return 0
+  fi
+  without_lock_fds "$WINELOADER" reg import "C:\\${settings_file##*/}" >> "$log" 2>&1 \
+    && import_status=0 || import_status=$?
+  rm -f "$settings_file"
+  if [ "$import_status" -eq 0 ] && [ "$hidraw_planned" -eq 1 ] && [ "$NOTPROTON_DISABLE_HIDRAW" != "1" ]; then
+    rm -f "$hidraw_file"
+  fi
+  if [ "$import_status" -eq 0 ] && [ -n "$controllers_add$controllers_remove$hidraw_value$dpi_value" ]; then
+    # Wine only reads these keys when it starts, so restart Wine to apply them.
+    without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
+    without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
+  fi
+  if [ "$import_status" -eq 0 ] && [ "$hidraw_planned" -eq 1 ] && [ "$NOTPROTON_DISABLE_HIDRAW" = "1" ]; then
+    echo "controllers: hidraw disabled (NOTPROTON_DISABLE_HIDRAW=1)" >> "$log" 2>&1 || true
+  fi
+  if [ "$import_status" -eq 0 ] && [ -n "$dpi_value" ]; then
+    echo "video: LogPixels=$new_dpi" >> "$log" 2>&1 || true
+  fi
+  if [ "$import_status" -eq 0 ] && [ "$controllers_planned" -eq 1 ]; then
+    write_owned_controllers "$controllers_wanted" 2>/dev/null || true
+    if [ "$NOTPROTON_RAW_CONTROLLERS" = "1" ]; then
+      echo "controllers: games read them directly (NOTPROTON_RAW_CONTROLLERS=1)" >> "$log" 2>&1 || true
+    elif [ -n "$controllers_wanted" ]; then
+      echo "controllers: $(printf '%s\n' "$controllers_wanted" | grep -c .) kept off hidraw" \
+        >> "$log" 2>&1 || true
+    fi
+  fi
+  [ "$import_status" -eq 0 ] \
+    || echo "=== prefix settings import exited status=$import_status ===" >> "$log" 2>&1 || true
+}
+
+stage_step="runner check"
+if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
+  echo "=== build ${np_build:-(none recorded)} behind this compatibility tool is not set up, set it up in NotProton ===" >> "$log" 2>&1 || true
+  show_alert "CrossOver is not set up" "The CrossOver build behind $(alert_safe "$np_display") is not set up. Set it up in NotProton, or pick another compatibility tool for this game."
+  exit 1
+fi
+echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
+
+# Each CrossOver build needs its own template.
+# FEX builds need two, one for FEX/arm64 Wine and one for Rosetta/AMD64 Wine
+runner_id=""
+[ -z "$np_build" ] || runner_id="crossover-$np_build-${wine_unix##*/}"
+
+in_template_env() {
+  prefix="$1"
+  shift
+  without_lock_fds \
+    env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-}" TMPDIR="${TMPDIR:-/tmp}" \
+    LANG="${LANG:-}" LC_ALL="${LC_ALL:-}" \
+    PATH="$CX_ROOT/bin:/usr/bin:/bin:/usr/sbin:/sbin" CX_ROOT="$CX_ROOT" CX_HOME="$CX_HOME" \
+    WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix" \
+    WINELOADER="$WINELOADER" WINESERVER="$WINESERVER" WINEPREFIX="$prefix" "$@"
+}
+
+seed_scratch=""
+seed_building=0
+# shellcheck disable=SC2329 # the traps in seed_prefix_from_template invoke this
+abandon_seed() {
+  if [ -n "$seed_scratch" ]; then
+    if [ "$seed_building" -eq 1 ]; then
+      in_template_env "$seed_scratch" "$WINESERVER" -k >/dev/null 2>&1 || true
+      in_template_env "$seed_scratch" "$WINESERVER" -w >/dev/null 2>&1 || exit "$1"
+    fi
+    rm -rf "$seed_scratch" 2>/dev/null || true
+  fi
+  exit "$1"
+}
+
+prefix_server_dir() {
+  [ -n "${1:-$WINEPREFIX}" ] || return 1
+  ids=$(stat -f '%d-%i' "${1:-$WINEPREFIX}" 2>/dev/null) || return 1
+  [ -n "$ids" ] || return 1
+  printf '/tmp/.wine-%s/server-%s' "$(id -u)" \
+    "$(printf '%s' "$ids" | awk -F- '{printf "%x-%x", $1, $2}')"
+}
+
+sweep_dead_seeds() {
+  for leftover in "$@"; do
+    [ -d "$leftover" ] && [ ! -L "$leftover" ] || continue
+    case "${leftover##*.}" in ''|0|*[!0-9]*) continue ;; esac
+    [ "$(stat -f %u "$leftover" 2>/dev/null)" = "$(id -u)" ] || continue
+    kill -0 "${leftover##*.}" 2>/dev/null && continue
+    stale_server=$(prefix_server_dir "$leftover") || continue
+    if [ -d "$stale_server" ]; then
+      stale_users=$(lsof -t +D "$stale_server" 2>&1 || true)
+      [ -z "$stale_users" ] || continue
+    fi
+    rm -rf "$leftover" 2>/dev/null || true
+  done
+}
+
+same_volume() {
+  one=$(stat -f %d "$1" 2>/dev/null) || return 1
+  two=$(stat -f %d "$2" 2>/dev/null) || return 1
+  [ "$one" = "$two" ]
+}
+
+# On non-APFS file systems, a full copy is made rather than a clone.
+volume_clones() {
+  device=$(stat -f %Sd "$1" 2>/dev/null) || return 1
+  mount | grep -q "^/dev/$device on .* (apfs[,)]"
+}
+
+# Built in a temporary folder and renamed when the build finishes, so a broken template is never used
+build_prefix_template() {
+  sweep_dead_seeds "$template_dir"/pfx.building.*
+  seed_scratch="$template_dir/pfx.building.$$"
+  mkdir "$seed_scratch" || return 1
+  echo "=== building the prefix template for $runner_id ===" >> "$log" 2>&1 || true
+  # The Steam user folders have to exist before wineboot runs, or wineboot will make its own
+  # and cloud saves end up in the wrong place.
+  lay_out_proton_profile "$seed_scratch" || return 1
+  seed_building=1
+  in_template_env "$seed_scratch" "$WINELOADER" wineboot --init >> "$log" 2>&1 &
+  initialized=0
+  wait $! || initialized=$?
+  in_template_env "$seed_scratch" "$WINESERVER" -w >> "$log" 2>&1 &
+  if ! wait $!; then
+    echo "=== template server did not finish, leaving its staging folder intact ===" >> "$log" 2>&1 || true
+    seed_scratch=""
+    seed_building=0
+    return 1
+  fi
+  seed_building=0
+  if [ "$initialized" -ne 0 ] || [ ! -s "$seed_scratch/system.reg" ] \
+    || [ ! -s "$seed_scratch/user.reg" ] || [ ! -s "$seed_scratch/userdef.reg" ]; then
+    echo "=== wineboot produced no template, this game gets its own prefix ===" \
+      >> "$log" 2>&1 || true
+    rm -rf "$seed_scratch" 2>/dev/null || true
+    seed_scratch=""
+    return 1
+  fi
+  if [ ! -e "$template_dir/pfx" ] && [ ! -L "$template_dir/pfx" ]; then
+    mv "$seed_scratch" "$template_dir/pfx" 2>/dev/null || true
+  fi
+  rm -rf "$seed_scratch" 2>/dev/null || true
+  seed_scratch=""
+  [ -f "$template_dir/pfx/system.reg" ]
+}
+
+install_seed_tree() (
+  set -- ""
+  while [ "$#" -gt 0 ]; do
+    relative=$1
+    shift
+    source_dir="$seed_scratch$relative"
+    target_dir="$WINEPREFIX$relative"
+    [ -d "$target_dir" ] && [ ! -L "$target_dir" ] || return 1
+    [ -r "$source_dir" ] && [ -x "$source_dir" ] || return 1
+    for source in "$source_dir"/* "$source_dir"/.[!.]* "$source_dir"/..?*; do
+      [ -e "$source" ] || [ -L "$source" ] || continue
+      name=${source##*/}
+      if [ -z "$relative" ]; then
+        case "$name" in system.reg|.update-timestamp) continue ;; esac
+      fi
+      target="$target_dir/$name"
+      if [ -d "$source" ] && [ ! -L "$source" ]; then
+        if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+          mkdir "$target" || return 1
+        fi
+        [ -d "$target" ] && [ ! -L "$target" ] || return 1
+        set -- "$@" "$relative/$name"
+      elif [ -e "$target" ] || [ -L "$target" ]; then
+        case "$relative/$name" in
+          /drive_c/users/steamuser/*) continue ;;
+        esac
+        [ -L "$source" ] && [ -L "$target" ] \
+          && [ "$(readlink "$source")" = "$(readlink "$target")" ] || return 1
+      elif [ -L "$source" ]; then
+        ln -sh "$(readlink "$source")" "$target" || return 1
+        [ -L "$target" ] && [ "$(readlink "$source")" = "$(readlink "$target")" ] || return 1
+      elif [ -f "$source" ]; then
+        ln -h "$source" "$target" || return 1
+        [ ! -L "$target" ] && [ "$source" -ef "$target" ] || return 1
+      else
+        return 1
+      fi
+    done
+  done
+  ln -h "$seed_scratch/system.reg" "$WINEPREFIX/system.reg" \
+    && [ ! -L "$WINEPREFIX/system.reg" ] \
+    && [ "$seed_scratch/system.reg" -ef "$WINEPREFIX/system.reg" ] || return 1
+  if [ -f "$seed_scratch/.update-timestamp" ]; then
+    ln -h "$seed_scratch/.update-timestamp" "$WINEPREFIX/.update-timestamp" || return 1
+  fi
+)
+
+copy_template_into_prefix() {
+  seed_scratch="$STEAM_COMPAT_DATA_PATH/pfx.seeding.$$"
+  if ! mkdir "$seed_scratch" 2>/dev/null; then
+    echo "=== prefix staging folder is occupied, skipping the template ===" >> "$log" 2>&1 || true
+    seed_scratch=""
+    return 0
+  fi
+  if same_volume "$template_dir" "$STEAM_COMPAT_DATA_PATH" && volume_clones "$template_dir"; then
+    how="cloned this prefix from the $runner_id template"
+    cp -c -R "$template_dir/pfx/." "$seed_scratch" 2>/dev/null && copied=0 || copied=$?
+  else
+    how="copied this prefix from the $runner_id template, not a clone"
+    cp -R "$template_dir/pfx/." "$seed_scratch" 2>/dev/null && copied=0 || copied=$?
+  fi
+  if [ "$copied" -eq 0 ] && prefix_is_bare && install_seed_tree; then
+    echo "=== $how ===" >> "$log" 2>&1 || true
+  else
+    echo "=== could not seed from the template, wine builds this prefix itself ===" \
+      >> "$log" 2>&1 || true
+  fi
+  rm -rf "$seed_scratch" 2>/dev/null || true
+  seed_scratch=""
+}
+
+prefix_is_bare() (
+  set -- ""
+  while [ "$#" -gt 0 ]; do
+    relative=$1
+    shift
+    directory="$WINEPREFIX$relative"
+    [ -d "$directory" ] && [ ! -L "$directory" ] \
+      && [ -r "$directory" ] && [ -x "$directory" ] || return 1
+    for node in "$directory"/* "$directory"/.[!.]* "$directory"/..?*; do
+      [ -e "$node" ] || [ -L "$node" ] || continue
+      part="$relative/${node##*/}"
+      if [ -L "$node" ]; then
+        if [ "$part" = /dosdevices/s: ] && [ "$(readlink "$node")" = "$(game_drive_record)" ]; then
+          continue
+        fi
+        case "$part:$(readlink "$node")" in
+          /dosdevices/c::../drive_c|/dosdevices/z::/|/drive_c/users/crossover:steamuser|\
+          '/drive_c/users/steamuser/My Documents:./Documents'|\
+          '/drive_c/users/steamuser/Application Data:./AppData/Roaming'|\
+          '/drive_c/users/steamuser/Local Settings/Application Data:../AppData/Local') continue ;;
+          *) return 1 ;;
+        esac
+      fi
+      case "$part" in
+        /drive_c|/drive_c/users|/drive_c/users/steamuser|/dosdevices)
+          [ -d "$node" ] || return 1 ;;
+        /drive_c/users/steamuser/*)
+          [ -d "$node" ] || [ -f "$node" ] || return 1 ;;
+        *) return 1 ;;
+      esac
+      if [ -d "$node" ]; then set -- "$@" "$part"; fi
+    done
+  done
+)
+
+template_identity() (
+  stat -f '%d:%i:%c' "$CX_ROOT" || return 1
+  /usr/bin/shasum -a 256 < "$np_tool_dir/run" || return 1
+  cd "$CX_ROOT" || return 1
+  set -- "$WINELOADER" "$WINESERVER" share/wine/wine.inf
+  for file in lib/wine/*-windows/ntdll.dll lib/wine/*-windows/lsteamclient.dll \
+    lib/wine/*-unix/lsteamclient.so; do
+    [ ! -f "$file" ] || set -- "$@" "$file"
+  done
+  /usr/bin/shasum -a 256 "$@"
+)
+
+# Each game's prefix is copied from one template (per runner) instead of running wineboot.
+# On APFS the copy is a clone, so it takes almost no space.
+seed_prefix_from_template() {
+  sweep_dead_seeds "$STEAM_COMPAT_DATA_PATH"/pfx.seeding.*
+  [ -n "$runner_id" ] || return 0
+  if ! prefix_is_bare; then
+    [ -f "$WINEPREFIX/system.reg" ] \
+      || echo "=== prefix is not empty or a standalone Steam profile, skipping the template ===" \
+        >> "$log" 2>&1 || true
+    return 0
+  fi
+  # Since a user can have more than one Steam library and libraries can be on different drives,
+  # the template is stored alongside the Steam library to support APFS cloning.
+  template_cache="$(dirname "$STEAM_COMPAT_DATA_PATH")/notproton-template"
+  template_lock="$(dirname "$STEAM_COMPAT_DATA_PATH")/.notproton-template.lock"
+  [ ! -L "$template_cache" ] && [ ! -L "$template_lock" ] || return 0
+  [ ! -e "$template_lock" ] || [ -f "$template_lock" ] || return 0
+  if ! { : >> "$template_lock"; } 2>/dev/null; then
+    echo "=== prefix template cache is not writable, skipping the template ===" >> "$log" 2>&1 || true
+    return 0
+  fi
+  exec 9>> "$template_lock"
+  if ! /usr/bin/lockf -s -t 0 9; then
+    exec 9>&-
+    echo "=== prefix templates are busy, wine builds this prefix itself ===" >> "$log" 2>&1 || true
+    return 0
+  fi
+  template_dir="$template_cache/$runner_id"
+  if [ -L "$template_cache" ] || [ -L "$template_dir" ] \
+    || ! mkdir -p "$template_dir"; then exec 9>&-; return 0; fi
+  if ! identity=$(template_identity); then exec 9>&-; return 0; fi
+  trap 'abandon_seed 143' TERM
+  trap 'abandon_seed 130' INT
+  trap 'abandon_seed 129' HUP
+  if [ -L "$template_dir/pfx" ] || [ -L "$template_dir/ready" ] \
+    || { [ -e "$template_dir/pfx" ] && [ ! -d "$template_dir/pfx" ]; } \
+    || { [ -e "$template_dir/ready" ] && [ ! -f "$template_dir/ready" ]; }; then
+    exec 9>&-
+    trap - TERM INT HUP
+    return 0
+  fi
+  if [ ! -s "$template_dir/pfx/system.reg" ] \
+    || [ "$(cat "$template_dir/ready" 2>/dev/null)" != "$identity" ]; then
+    if ! rm -f "$template_dir/ready" || ! rm -rf "$template_dir/pfx"; then
+      echo "=== could not invalidate the old prefix template, skipping it ===" >> "$log" 2>&1 || true
+      exec 9>&-
+      trap - TERM INT HUP
+      return 0
+    fi
+    if build_prefix_template; then
+      if ! printf '%s\n' "$identity" > "$template_dir/ready"; then
+        rm -f "$template_dir/ready" 2>/dev/null || true
+      fi
+    fi
+  fi
+  if [ "$(cat "$template_dir/ready" 2>/dev/null)" = "$identity" ] \
+    && [ -s "$template_dir/pfx/system.reg" ]; then
+    copy_template_into_prefix
+  fi
+  exec 9>&-
+  trap - TERM INT HUP
+}
+
+prepare_prefix_directory() {
+  mkdir -p "$STEAM_COMPAT_DATA_PATH" || return 1
+  prefix_lock="$STEAM_COMPAT_DATA_PATH/.notproton-prefix.lock"
+  [ ! -L "$prefix_lock" ] && { [ ! -e "$prefix_lock" ] || [ -f "$prefix_lock" ]; } || return 1
+  exec 8>> "$prefix_lock"
+  if ! /usr/bin/lockf -s -t 0 8; then
+    echo "=== another launch is preparing this prefix ===" >> "$log" 2>&1 || true
+    /usr/sbin/lsof -- "$prefix_lock" >> "$log" 2>&1 || true
+    return 1
+  fi
+  for interrupted in "$STEAM_COMPAT_DATA_PATH"/pfx.replaced.*; do
+    [ -e "$interrupted" ] || [ -L "$interrupted" ] || continue
+    echo "=== interrupted prefix replacement needs recovery: $interrupted ===" >> "$log" 2>&1 || true
+    show_alert "Prefix recovery required" "An interrupted prefix replacement may hold saved games. Do not delete this prefix. Check its notproton-run.log for the recovery folder."
+    exit 1
+  done
+  mkdir -p "$WINEPREFIX"
+}
+
+game_drive_record() {
+  record="$STEAM_COMPAT_DATA_PATH/notproton-game-drive"
+  [ -f "$record" ] && [ ! -L "$record" ] && cat "$record" 2>/dev/null
+}
+
+record_game_drive() {
+  record="$STEAM_COMPAT_DATA_PATH/notproton-game-drive"
+  [ "$(game_drive_record)" != "$1" ] && [ ! -L "$record" ] || return 0
+  { printf '%s\n' "$1" > "$record.new" && mv -f "$record.new" "$record"; } 2>/dev/null \
+    || rm -f "$record.new" 2>/dev/null || true
+}
+
+restart_for_drive() {
+  # Wine only picks up a new drive when it starts.
+  without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
+  without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
+}
+
+unmap_game_drive() {
+  [ -L "$drive" ] && [ "$(readlink "$drive")" = "$(game_drive_record)" ] || return 0
+  rm -f "$drive" || return 0
+  rm -f "$STEAM_COMPAT_DATA_PATH/notproton-game-drive" 2>/dev/null || true
+  echo "=== removed drive S:, the game is not in a Steam library ===" >> "$log" 2>&1 || true
+  restart_for_drive
+}
+
+# Like Proton, the game's Steam library gets drive S: so the game does not run from Z:.
+map_game_drive() {
+  drive="$WINEPREFIX/dosdevices/s:"
+  [ -d "$WINEPREFIX/dosdevices" ] && [ ! -L "$WINEPREFIX/dosdevices" ] || return 0
+  library=""
+  set -f
+  old_ifs=$IFS
+  IFS=:
+  for path in $STEAM_COMPAT_LIBRARY_PATHS; do
+    path=${path%/}
+    [ -n "$path" ] || continue
+    case "$STEAM_COMPAT_INSTALL_PATH/" in
+      "$path"/*) if [ "${#path}" -gt "${#library}" ]; then library=$path; fi ;;
+    esac
+  done
+  IFS=$old_ifs
+  set +f
+  if [ -z "$library" ]; then
+    unmap_game_drive
+    return 0
+  fi
+  target=$library
+  if real=$(cd -P -- "$library" 2>/dev/null && pwd) && [ "${real##*/}" = steamapps ]; then
+    parent=${real%/*}
+    if [ -n "$parent" ] && [ -w "$parent" ] \
+      && [ "$(stat -f %d "$real")" = "$(stat -f %d "$parent")" ]; then
+      target=$parent
+    fi
+  fi
+  if [ -L "$drive" ]; then
+    current=$(readlink "$drive") || return 0
+    if [ "$current" = "$target" ]; then
+      record_game_drive "$target"
+      return 0
+    fi
+    if [ "$current" != "$(game_drive_record)" ]; then
+      echo "=== drive S: already points to $current, left in place ===" >> "$log" 2>&1 || true
+      return 0
+    fi
+    rm -f "$drive" || return 0
+  elif [ -e "$drive" ]; then
+    echo "=== drive S: is not a link, left in place ===" >> "$log" 2>&1 || true
+    return 0
+  fi
+  if ln -s "$target" "$drive" 2>> "$log"; then
+    record_game_drive "$target"
+    echo "=== mapped drive S: to $target ===" >> "$log" 2>&1 || true
+    restart_for_drive
+  else
+    echo "=== could not map drive S: to $target ===" >> "$log" 2>&1 || true
+  fi
+}
+
+# Implementation of Proton's create_fonts_symlinks().
+link_fonts() {
+  [ -f "$WINEPREFIX/system.reg" ] || return 0
+  fonts_dir="$WINEPREFIX/drive_c/windows/Fonts"
+  mkdir -p "$fonts_dir" 2>> "$log" || return 0
+  for dir in "$np_support/fonts" "$CX_ROOT/share/wine/fonts"; do
     for src in "$dir"/*.ttf "$dir"/*.ttc; do
       [ -f "$src" ] || continue
       name=$(basename "$src")
