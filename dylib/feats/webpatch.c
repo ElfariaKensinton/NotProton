@@ -772,7 +772,11 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "border-radius:2px;background:rgba(255,255,255,.12)}" \
     ".MSCXBar>div{position:absolute;top:0;bottom:0;left:-30%;width:30%;background:#1a9fff;" \
     "animation:MSCXSlide 1.2s linear infinite}" \
-    "@keyframes MSCXSlide{from{left:-30%}to{left:100%}}\""
+    "@keyframes MSCXSlide{from{left:-30%}to{left:100%}}" \
+    ".MSCXPanel .MSCXEnvField{box-sizing:border-box;display:block;width:100%;min-width:0;min-height:132px;resize:vertical;padding:10px;color:#dfe3e6;background:rgba(13,15,18,.72);border:1px solid rgba(130,140,150,.35);border-radius:3px;font:12px/1.5 monospace;white-space:pre}" \
+    ".MSCXPanel .MSCXEnvField:focus{outline:1px solid #66c0f4}" \
+    ".MSCXPanel .MSCXEnvHint{margin-top:6px;color:#a7adb4;font-size:12px;line-height:1.4}" \
+    ".MSCXNoBottomGap{margin-bottom:0}\""
 
 #define NP_CX_BARREL(X) X(XY) X(m) X(Yh) X($n) X(Vb) X(D0)
 #define NP_CX_BARREL_C(n) #n,
@@ -982,6 +986,24 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "return/[\"'\\\\]/.test(x)||/^[\\w.,:=\\/+@%-]*$/.test(v)?x:x.slice(0,i+1)+\"'\"+v+\"'\"})" \
     ".concat(\"%command%\",w.filter(x=>!k(x))).join(\" \")}"
 
+#define NP_ENV_CARRIER_BRIDGE \
+    "(()=>{try{const C=\"NOTPROTON_GAME_ENV_B64\",K=id=>\"NotProtonGameEnv_\"+id+\"_applied\";const clean=s=>String(s||\"\").replace(new RegExp(\"(^|\\\\s)\"" \
+    "+C+\"=[A-Za-z0-9+/=]+(?=\\\\s|$)\",\"g\"),\"$1\").trim();const payload=raw=>{const m=new Map;for(const line of String(raw||\"\").split(/\\r?\\n/)){const" \
+    " x=line.trim();if(!x||x[0]===\"#\")continue;const i=line.indexOf(\"=\");if(i<1)continue;const k=line.slice(0,i).trim(),v=line.slice(i+1);if(/^[A" \
+    "-Za-z_][A-Za-z0-9_]*$/.test(k))m.set(k,v)}return [...m].map(([k,v])=>k+\"=\"+v).join(\"\\n\")};const encode=raw=>{const p=payload(raw);return p?b" \
+    "toa(unescape(encodeURIComponent(p))):\"\"};const apps=globalThis.SteamClient?.Apps;if(apps?.SetAppLaunchOptions&&!apps.SetAppLaunchOptions.__n" \
+    "pEnvCarrier){const original=apps.SetAppLaunchOptions;const wrapped=function(id,o){let raw=null;try{raw=localStorage.getItem(K(id))}catch(e){" \
+    "}const old=/NOTPROTON_GAME_ENV_B64=([A-Za-z0-9+/=]+)/.exec(String(o||\"\"));const token=raw===null?(old?old[1]:\"\"):encode(raw);let s=clean(o);" \
+    "if(token){if(/%command%/i.test(s))s=s.replace(/%command%/i,C+\"=\"+token+\" %command%\");else s=C+\"=\"+token+\" %command%\"+(s?\" \"+s:\"\")}return ori" \
+    "ginal.call(this,id,s)};wrapped.__npEnvCarrier=true;try{apps.SetAppLaunchOptions=wrapped}catch(e){}}const hide=t=>{if(!t||typeof t!==\"object\"" \
+    ")return t;try{if(Object.getOwnPropertyDescriptor(t,\"strLaunchOptions\")?.get?.__npEnvDisplay)return t;let raw=String(t.strLaunchOptions||\"\");" \
+    "const get=()=>clean(raw);get.__npEnvDisplay=true;Object.defineProperty(t,\"strLaunchOptions\",{configurable:true,enumerable:true,get,set(v){ra" \
+    "w=String(v||\"\")}})}catch(e){}return t};const ds=window.appDetailsStore;if(ds&&typeof ds.RequestAppDetails===\"function\"&&!ds.RequestAppDetail" \
+    "s.__npEnvDisplay){const original=ds.RequestAppDetails;const wrapped=function(...args){return Promise.resolve(original.apply(this,args)).then" \
+    "(hide)};wrapped.__npEnvDisplay=true;try{ds.RequestAppDetails=wrapped}catch(e){}}for(const name of [\"m_mapAppDetails\",\"m_mapDetails\",\"m_mapAp" \
+    "ps\"]){const m=ds?.[name];if(m?.values)for(const t of m.values())hide(t)}}catch(e){console.warn(\"NotProton: launch-options display filter fai" \
+    "led\",e)}})()"
+
 #define NP_LAUNCH_MIGRATION \
     "(async()=>{try{" \
     "const K=\"NotProtonLaunchMigrated_\"+this.m_cm.steamid.GetAccountID();" \
@@ -1181,7 +1203,7 @@ static const np_gate_t g_fixes[] = {
       "selectedOption:" NP_C1 "||\"" NP_FALLBACK_TOOL "\",",
       1, 0 },
     { "this.m_bServicesInitialized=!0,SteamClient.UI.NotifyAppInitialized()",
-      "this.m_bServicesInitialized=!0," NP_LAUNCH_MIGRATION ",SteamClient.UI.NotifyAppInitialized()", 1, 0 },
+      "this.m_bServicesInitialized=!0," NP_ENV_CARRIER_BRIDGE "," NP_LAUNCH_MIGRATION ",SteamClient.UI.NotifyAppInitialized()", 1, 0 },
     // Pr means macOS, td means Windows.
     // Steam Play makes every game count as available, so the Apple filter goes by oslist.
     // Games missing from appinfo.vdf, and other platforms, keep Steam's check.
