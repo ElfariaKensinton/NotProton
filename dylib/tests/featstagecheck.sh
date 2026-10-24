@@ -232,8 +232,8 @@ rmdir "$sys32/dxgi.dll"
 
 feat_loop=$(sed -n '/^while IFS= read -r np_feat_env; do$/,/^NP_FEAT_ENVS$/p' "$SRC")
 feat_at=$(grep -n '^while IFS= read -r np_feat_env; do$' "$SRC" | cut -d: -f1)
-# shellcheck disable=SC2016 # Match the literal $(env.
-forward_at=$(grep -n '^for name in $(env ' "$SRC" | cut -d: -f1)
+# shellcheck disable=SC2016 # Match the forwarded system environment loop.
+forward_at=$(grep -n '^for name in $(printf ' "$SRC" | cut -d: -f1)
 ok "plugin env is prepended before the forwarded settings" "$([ "$feat_at" -lt "$forward_at" ] && echo yes)" "yes"
 # shellcheck disable=SC2016 # expanded by the inner shell
 args=$(np_feat_envs='LATER=2
