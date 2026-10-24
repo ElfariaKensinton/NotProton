@@ -172,6 +172,50 @@ if [ "$np_flavor" = rosetta ] || [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" 
 fi
 export WINELOADER WINESERVER
 
+np_from_defaults() {
+  case " $np_defaulted " in *" $1="*) return 0 ;; esac
+  return 1
+}
+np_defaulted=""
+case "${np_flavor-}" in
+  fex) np_defaults_runner=fex ;;
+  rosetta) np_defaults_runner=rosetta ;;
+  *) np_defaults_runner=rosetta; [ "${wine_unix##*/}" != aarch64-unix ] || np_defaults_runner=fex ;;
+esac
+np_defaults_file="$np_support/defaults-$np_defaults_runner"
+if [ -n "${np_build-}" ] && [ -f "$np_support/defaults-override-$np_build-$np_defaults_runner" ]; then
+  np_defaults_file="$np_support/defaults-override-$np_build-$np_defaults_runner"
+fi
+if [ "$verb" = waitforexitandrun ] && [ -f "$np_defaults_file" ] && [ -r "$np_defaults_file" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    key=${line%%=*}
+    value=${line#*=}
+    case "$line" in
+      CX_GRAPHICS_BACKEND=dxmt | CX_GRAPHICS_BACKEND=dxvk | CX_GRAPHICS_BACKEND=wined3d) ;;
+      CX_GRAPHICS_BACKEND=d3dmetal | D3DM_ENABLE_METALFX=[01] | ROSETTA_ADVERTISE_AVX=[01])
+        [ "${wine_unix##*/}" != aarch64-unix ] || continue ;;
+      FEX_X87REDUCEDPRECISION=[01])
+        [ "${wine_unix##*/}" = aarch64-unix ] || continue ;;
+      MTL_HUD_ENABLED=[01] | DXMT_ENABLE_NVEXT=[01] | DXMT_METALFX_SPATIAL_SWAPCHAIN=[01] | \
+      WINEMSYNC=[01] | NOTPROTON_RETINA=[01] | NOTPROTON_RAW_CONTROLLERS=[01] | NOTPROTON_DISABLE_HIDRAW=[01]) ;;
+      DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=*)
+        case "${value#*=}" in 1.5 | 1.72 | 2.0 | 3.0) ;; *) continue ;; esac
+        if printf '%s' "${DXMT_CONFIG-}" | tr ';' '\n' \
+          | grep -q '^[[:space:]]*d3d11\.metalSpatialUpscaleFactor[[:space:]]*='; then
+          continue
+        fi
+        export DXMT_CONFIG="${DXMT_CONFIG:+$DXMT_CONFIG;}$value"
+        np_defaulted="$np_defaulted${np_defaulted:+ }$line"
+        continue ;;
+      *) continue ;;
+    esac
+    eval "[ -z \"\${$key+x}\" ]" || continue
+    export "${line?}"
+    np_defaulted="$np_defaulted${np_defaulted:+ }$line"
+  done < "$np_defaults_file"
+fi
+[ "${CX_GRAPHICS_BACKEND-}" != auto ] || unset -v CX_GRAPHICS_BACKEND
+
 np_dropped=""
 if [ "${wine_unix##*/}" = aarch64-unix ]; then
   if [ "${CX_GRAPHICS_BACKEND:-}" = d3dmetal ]; then
@@ -184,10 +228,12 @@ if [ "${wine_unix##*/}" = aarch64-unix ]; then
   done
   fex_from=environment
   [ -n "${FEX_X87REDUCEDPRECISION+x}" ] || fex_from=default
+  if np_from_defaults FEX_X87REDUCEDPRECISION; then fex_from=${np_defaults_file##*/}; fi
   export FEX_X87REDUCEDPRECISION="${FEX_X87REDUCEDPRECISION-1}"
 else
   avx_from=environment
   [ -n "$ROSETTA_ADVERTISE_AVX" ] || avx_from=default
+  if np_from_defaults ROSETTA_ADVERTISE_AVX; then avx_from=${np_defaults_file##*/}; fi
   export ROSETTA_ADVERTISE_AVX="${ROSETTA_ADVERTISE_AVX:-1}"
 fi
 
@@ -217,6 +263,7 @@ fi
   echo "STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID"
   echo "-- steam env passed through --"
   env | grep -iE '^(Steam|SDL_)' | sort
+  [ -z "$np_defaulted" ] || echo "from ${np_defaults_file##*/}: $np_defaulted"
   [ -z "$np_dropped" ] || echo "ignored on arm64 Wine: $np_dropped"
 } >> "$log" 2>&1 || true
 
@@ -1390,7 +1437,9 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   stage_step="prefix lock"
   prepare_prefix_directory
   msync_from=environment
-  if [ -z "$WINEMSYNC" ] && [ -r "$STEAM_COMPAT_DATA_PATH/notproton-msync" ]; then
+  if np_from_defaults WINEMSYNC; then msync_from=${np_defaults_file##*/}; fi
+  if [ -z "$WINEMSYNC" ] && [ "$verb" != waitforexitandrun ] \
+    && [ -r "$STEAM_COMPAT_DATA_PATH/notproton-msync" ]; then
     WINEMSYNC=$(tr -d ' \t\n' \
       < "$STEAM_COMPAT_DATA_PATH/notproton-msync" 2>/dev/null || true)
     msync_from=carried-over
@@ -1744,6 +1793,9 @@ if [ -n "\$STEAM_DYLD_INSERT_LIBRARIES" ]; then
     export DYLD_INSERT_LIBRARIES="\$STEAM_DYLD_INSERT_LIBRARIES"
   fi
 fi
+if [ -n "\$NOTPROTON_FEATURE_DYLIBS" ]; then
+  export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$NOTPROTON_FEATURE_DYLIBS"
+fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
 "$WINELOADER" "\$@"
 exit \$?
@@ -1836,8 +1888,223 @@ terminate() {
   echo "=== termination signal received, killing wine prefix ===" >> "$log" 2>&1 || true
   kill_wine_prefix
   [ -n "$open_pid" ] && kill "$open_pid" 2>/dev/null || true
+  [ -n "$open_pid" ] || exit 143
 }
+open_pid=""
 trap terminate TERM INT HUP
+
+np_feat_dir="$np_support/plugins"
+np_feat_log() {
+  echo "=== $* ===" >> "$log" 2>&1 || true
+}
+np_feat_field() {
+  LC_ALL=C sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p" "$1"
+}
+np_feat_first() {
+  np_feat_field "$1" "$2" | head -1
+}
+np_feat_requires() {
+  np_feat_field "$1" requires | head -n 4 | while IFS= read -r np_feat_req; do
+    case "$np_feat_req" in
+      (/*) ;;
+      (*) np_feat_req="$HOME/$np_feat_req" ;;
+    esac
+    [ -f "$np_feat_req" ] && { printf '%s' "$np_feat_req"; break; }
+  done
+  return 0
+}
+np_feat_installed() {
+  [ -z "$(np_feat_first "$1" requires)" ] || [ -n "$(np_feat_requires "$1")" ]
+}
+np_feat_file_of() {
+  printf '%s\n' "$np_feat_list" | while IFS= read -r np_feat_entry; do
+    [ "${np_feat_entry%% *}" = "$1" ] && { printf '%s' "${np_feat_entry#* }"; break; }
+  done
+  return 0
+}
+# webpatch.c skips files with overlong lines or values, so they're skipped here too.
+np_feat_too_long() {
+  LC_ALL=C awk 'length($0) >= 2047 { f = 1 } END { exit !f }' "$1" && return 0
+  for np_feat_spec in key:192:1 label:192:1 description:512:1 section:32:1 on:32:1 \
+                      off:32:1 depends:192:1 requires:192:4; do
+    np_feat_max=${np_feat_spec#*:}
+    np_feat_field "$1" "${np_feat_spec%%:*}" | head -n "${np_feat_spec##*:}" |
+      LC_ALL=C awk -v m="${np_feat_max%:*}" 'length($0) >= m { f = 1 } END { exit !f }' &&
+      return 0
+  done
+  return 1
+}
+np_feat_switched() {
+  eval "np_feat_sv=\${$1-}"
+  np_feat_son=$(np_feat_first "$2" on)
+  # shellcheck disable=SC2154 # eval assigns np_feat_sv above
+  [ "$np_feat_sv" = "${np_feat_son:-1}" ]
+}
+# Same rules as the panel.
+np_feat_active() {
+  [ "$2" -le 32 ] || return 1
+  np_feat_af=$(np_feat_file_of "$1")
+  [ -n "$np_feat_af" ] || return 1
+  np_feat_switched "$1" "$np_feat_af" || return 1
+  np_feat_installed "$np_feat_af" || return 1
+  np_feat_adep=$(np_feat_first "$np_feat_af" depends)
+  [ -z "$np_feat_adep" ] || np_feat_active "$np_feat_adep" $(($2 + 1))
+}
+
+np_feat_list=""
+np_feat_count=0
+# Same order as webpatch.c.
+np_feat_files=$(printf '%s\n' "$np_feat_dir"/*.conf | LC_ALL=C sort)
+while IFS= read -r np_feat_file; do
+  case "$np_feat_file" in
+    ("$np_feat_dir"/*.conf) ;;
+    (*) continue ;;
+  esac
+  [ -f "$np_feat_file" ] && [ -r "$np_feat_file" ] || continue
+  if np_feat_too_long "$np_feat_file"; then
+    np_feat_log "plugins: $np_feat_file has a line or value that's too long, ignored"
+    continue
+  fi
+  np_feat_key=$(np_feat_first "$np_feat_file" key)
+  if [ -z "$np_feat_key" ]; then
+    np_feat_log "plugins: $np_feat_file has no key, ignored"
+    continue
+  fi
+  if ! printf '%s\n' "$np_feat_key" | LC_ALL=C grep -qx 'NOTPROTON_[A-Z0-9_]\{1,\}'; then
+    np_feat_log "plugins: $np_feat_file has an invalid key $np_feat_key, ignored"
+    continue
+  fi
+  if [ -z "$(np_feat_first "$np_feat_file" label)" ]; then
+    np_feat_log "plugins: $np_feat_file has no label, ignored"
+    continue
+  fi
+  case "$(np_feat_first "$np_feat_file" section)" in
+    ("" | dev) ;;
+    (*) np_feat_log "plugins: $np_feat_file is not in the dev section, ignored"; continue ;;
+  esac
+  if [ -n "$(np_feat_file_of "$np_feat_key")" ]; then
+    np_feat_log "plugins: $np_feat_file repeats key $np_feat_key, ignored"
+    continue
+  fi
+  if [ "$np_feat_count" -ge 32 ]; then
+    np_feat_log "plugins: $np_feat_file is over the 32 plugin limit, ignored"
+    continue
+  fi
+  np_feat_count=$((np_feat_count + 1))
+  np_feat_list="$np_feat_list
+$np_feat_key $np_feat_file"
+done <<NP_FEAT_FILES
+$np_feat_files
+NP_FEAT_FILES
+
+np_feat_dylibs=""
+np_feat_envs=""
+while IFS= read -r np_feat_entry; do
+  [ -n "$np_feat_entry" ] || continue
+  np_feat_key=${np_feat_entry%% *}
+  np_feat_file=${np_feat_entry#* }
+  if ! np_feat_installed "$np_feat_file"; then
+    np_feat_switched "$np_feat_key" "$np_feat_file" &&
+      np_feat_log "$np_feat_key is on but is skipped as $np_feat_key's required files are missing"
+    continue
+  fi
+  np_feat_active "$np_feat_key" 0 || continue
+
+  if [ "$(np_feat_first "$np_feat_file" inject)" = 1 ]; then
+    np_feat_lib=$(np_feat_requires "$np_feat_file")
+    if [ ! -f "$np_feat_lib" ]; then
+      np_feat_log "$np_feat_key is skipped as it asks to load a dylib but doesn't name one"
+    elif [ "${np_feat_lib#*:}" != "$np_feat_lib" ]; then
+      np_feat_log "$np_feat_key is skipped as $np_feat_lib has a colon in it"
+    else
+      case ":$np_feat_dylibs:" in
+        (*":$np_feat_lib:"*) ;;
+        (*) np_feat_dylibs="${np_feat_dylibs:+$np_feat_dylibs:}$np_feat_lib"
+            np_feat_log "$np_feat_key will be loaded from $np_feat_lib" ;;
+      esac
+    fi
+  fi
+
+  np_feat_stage=$(np_feat_first "$np_feat_file" stage)
+  if [ -n "$np_feat_stage" ]; then
+    case "$np_feat_stage" in
+      (/*) ;;
+      (*) np_feat_stage="$HOME/$np_feat_stage" ;;
+    esac
+    np_feat_sys32="$WINEPREFIX/drive_c/windows/system32"
+    if [ ! -d "$np_feat_stage" ]; then
+      np_feat_log "$np_feat_key copies no DLLs as $np_feat_stage doesn't exist"
+    elif [ ! -d "$np_feat_sys32" ]; then
+      np_feat_log "$np_feat_key copies no DLLs as the prefix has no system32"
+    else
+      for np_feat_src in "$np_feat_stage"/*; do
+        [ -f "$np_feat_src" ] || continue
+        np_feat_dst="$np_feat_sys32/$(basename "$np_feat_src")"
+        if [ -d "$np_feat_dst" ]; then
+          np_feat_log "$np_feat_key skips $(basename "$np_feat_src") as system32 has a folder by that name"
+          continue
+        fi
+        cmp -s "$np_feat_src" "$np_feat_dst" && continue
+        np_feat_tmp="$np_feat_dst.np-stage.$$"
+        rm -f "$np_feat_tmp"
+        if { cp -c "$np_feat_src" "$np_feat_tmp" 2>/dev/null \
+             || cp "$np_feat_src" "$np_feat_tmp"; } && mv -f "$np_feat_tmp" "$np_feat_dst"; then
+          np_feat_log "$np_feat_key copied $(basename "$np_feat_src") into system32"
+        else
+          rm -f "$np_feat_tmp"
+          np_feat_log "$np_feat_key failed to copy $(basename "$np_feat_src") into system32"
+        fi
+      done
+    fi
+  fi
+
+  np_feat_over=$(np_feat_first "$np_feat_file" overrides)
+  if [ -n "$np_feat_over" ]; then
+    export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}$np_feat_over"
+    np_feat_log "$np_feat_key adds overrides $np_feat_over"
+  fi
+
+  while IFS= read -r np_feat_env; do
+    [ -n "$np_feat_env" ] || continue
+    case "$np_feat_env" in
+      (*=*) ;;
+      (*) np_feat_log "$np_feat_key skips env line $np_feat_env as it has no ="; continue ;;
+    esac
+    if ! printf '%s\n' "${np_feat_env%%=*}" | LC_ALL=C grep -qx '[A-Z_][A-Z0-9_]*'; then
+      np_feat_log "$np_feat_key skips env ${np_feat_env%%=*} as it isn't a valid variable name"
+      continue
+    fi
+    case "${np_feat_env%%=*}" in
+      (DYLD_* | PATH | CX_ROOT | CX_HOME | WINE* | STEAM_COMPAT_* | STEAM_DYLD_INSERT_LIBRARIES | \
+       NOTPROTON_FEATURE_DYLIBS | NOTPROTON_GAME_CWD | NOTPROTON_OVERLAY_SHIM)
+        np_feat_log "$np_feat_key skips env ${np_feat_env%%=*} as the compat_run script sets it"
+        continue ;;
+    esac
+    np_feat_rest=${np_feat_env#*=}
+    # shellcheck disable=SC2088 # a literal tilde is what is being matched
+    case "$np_feat_rest" in
+      ("~/"*) np_feat_rest="\$HOME/${np_feat_rest#"~/"}" ;;
+    esac
+    np_feat_env="${np_feat_env%%=*}="
+    # shellcheck disable=SC2016 # the literal text $HOME is what is being replaced
+    while :; do
+      case "$np_feat_rest" in
+        (*'$HOME'*)
+          np_feat_env="$np_feat_env${np_feat_rest%%'$HOME'*}$HOME"
+          np_feat_rest=${np_feat_rest#*'$HOME'} ;;
+        (*) np_feat_env="$np_feat_env$np_feat_rest"; break ;;
+      esac
+    done
+    # Kept in reverse since they get prepended to open args (which flips the order)
+    np_feat_envs="$np_feat_env
+$np_feat_envs"
+    np_feat_log "$np_feat_key sets $np_feat_env"
+  done <<NP_FEAT_ENV
+$(np_feat_field "$np_feat_file" env)
+NP_FEAT_ENV
+done <<NP_FEAT_LIST
+$np_feat_list
+NP_FEAT_LIST
 
 game_cwd="$(pwd)"
 if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
@@ -1852,6 +2119,24 @@ for name in $(printf '%s\n' \
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"
+done
+
+# Anything this script does not know by name. A launch option NOTPROTON_ENV_FOO=bar gives
+# the game FOO=bar, which is the only per-game way to set one, and Wine and the graphics
+# layers take far more than the prefixes above.
+np_env_passed=$(env | LC_ALL=C sed -nE 's/^NOTPROTON_ENV_([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' \
+  | LC_ALL=C sort)
+for name in $np_env_passed; do
+  case "$name" in
+    (DYLD_* | PATH | HOME | CX_ROOT | CX_HOME | STEAM_COMPAT_* | STEAM_DYLD_INSERT_LIBRARIES | \
+     WINEPREFIX | WINELOADER | WINESERVER | WINEDLLPATH | WINEDLLOVERRIDES | WINEMSYNC | NOTPROTON_*)
+      echo "=== NOTPROTON_ENV_$name would replace a setting this launch sets itself, ignored ===" \
+        >> "$log" 2>&1 || true
+      continue ;;
+  esac
+  eval "value=\$NOTPROTON_ENV_$name"
+  set -- --env "$name=$value" "$@"
+  echo "=== NOTPROTON_ENV_$name sets $name ===" >> "$log" 2>&1 || true
 done
 set -- \
   --env CX_ROOT="$CX_ROOT" \
@@ -1868,6 +2153,7 @@ set -- \
   --env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_COMPAT_CLIENT_INSTALL_PATH" \
   --env STEAM_COMPAT_APP_ID="$STEAM_COMPAT_APP_ID" \
   --env STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES" \
+  --env NOTPROTON_FEATURE_DYLIBS="$np_feat_dylibs" \
   --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"

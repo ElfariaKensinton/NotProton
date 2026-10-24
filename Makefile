@@ -44,6 +44,8 @@ SRCS := \
 	dylib/feats/compat.c \
 	dylib/feats/webui.c \
 	dylib/feats/compatsvc.c \
+	dylib/feats/defaults.c \
+	dylib/feats/compatpage.c \
 	dylib/feats/prefixstate.c \
 	dylib/feats/usershortcuts.c \
 	dylib/feats/webpatch.c \
@@ -68,10 +70,11 @@ DEPS := $(OBJS:.o=.d)
 
 .PHONY: all clean rebuild dobby deploy dylib dylib-install sigcheck fonts fonts-install app-payload app app-zip \
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures panel-behavior app-tests \
+        featcheck featstagecheck \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
-        appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
-        compatsvc-check prefixstate-check shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck launch-shell activatecheck FORCE
+        appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
+        compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck launch-shell activatecheck FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
 
@@ -122,6 +125,16 @@ routecheck:
 bridgecheck:
 	@if [ ! -f dylib/tests/bridgecheck.sh ]; then $(call SKIP,bridgecheck,dylib/tests/bridgecheck.sh); exit 0; fi; \
 	sh dylib/tests/bridgecheck.sh dylib/feats/compat_run.sh
+
+envpasscheck:
+	@if [ ! -f dylib/tests/envpasscheck.sh ]; then \
+		$(call SKIP,envpasscheck,dylib/tests/envpasscheck.sh); exit 0; fi; \
+	sh dylib/tests/envpasscheck.sh dylib/feats/compat_run.sh
+
+featstagecheck:
+	@if [ ! -f dylib/tests/featstagecheck.sh ]; then \
+		$(call SKIP,featstagecheck,dylib/tests/featstagecheck.sh); exit 0; fi; \
+	sh dylib/tests/featstagecheck.sh dylib/feats/compat_run.sh
 
 gamedrivecheck:
 	@if [ ! -f dylib/tests/gamedrivecheck.sh ]; then $(call SKIP,gamedrivecheck,dylib/tests/gamedrivecheck.sh); exit 0; fi; \
@@ -179,6 +192,27 @@ compatsvc-check:
 	mkdir -p $(OUT_DIR) && \
 	$(TEST_CC) -o $(COMPATSVC_CHECK) dylib/tests/compatsvc-check.c && \
 	$(COMPATSVC_CHECK)
+
+DEFAULTS_CHECK := $(OUT_DIR)/defaults-check
+
+$(DEFAULTS_CHECK): dylib/tests/defaults-check.c dylib/feats/defaults.c dylib/feats/defaults.h \
+                   dylib/util/buildid.h dylib/util/file.c dylib/util/file.h
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -o $@ dylib/tests/defaults-check.c dylib/util/file.c
+
+defaults-check: $(DEFAULTS_CHECK)
+	@$(DEFAULTS_CHECK)
+
+COMPATPAGE_CHECK := $(OUT_DIR)/compatpage-check
+
+compatpage-check:
+	@if [ ! -f dylib/tests/compatpage-check.c ]; then $(call SKIP,compatpage-check,dylib/tests/compatpage-check.c); exit 0; fi; \
+	mkdir -p $(OUT_DIR) && \
+	$(TEST_CC) -o $(COMPATPAGE_CHECK) dylib/tests/compatpage-check.c dylib/feats/defaults.c dylib/util/file.c && \
+	$(COMPATPAGE_CHECK)
+
+defaults-drift: $(DEFAULTS_CHECK)
+	@sh dylib/tests/defaults-drift.sh $(DEFAULTS_CHECK)
 
 SHORTCUT_BUNDLE_CHECK := $(OUT_DIR)/shortcut-bundle-check
 SHORTCUTCHECK         := $(OUT_DIR)/shortcutcheck
@@ -267,6 +301,7 @@ peicon-fixtures:
 	exit $$rc
 
 GATECHECK         := $(OUT_DIR)/gatecheck
+FEATCHECK         := $(OUT_DIR)/featcheck
 WEBPATCH_FIXTURES := dylib/tests/webpatch-fixtures
 
 $(GATECHECK): dylib/tests/gatecheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h
@@ -278,6 +313,16 @@ NATIVEPLATFORMCHECK := $(OUT_DIR)/nativeplatformcheck
 $(NATIVEPLATFORMCHECK): dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/feats/nativeplatform.h dylib/util/file.c
 	@mkdir -p $(dir $@)
 	$(TEST_CC) -O1 -DHELPER_TIMEOUT_MS=1000 -o $@ dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/util/file.c
+
+$(FEATCHECK): dylib/tests/featcheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -O1 -o $@ dylib/tests/featcheck.c
+
+featcheck:
+	@if [ ! -f dylib/tests/featcheck.c ]; then \
+		$(call SKIP,featcheck,dylib/tests/featcheck.c); exit 0; fi; \
+	$(MAKE) -s $(FEATCHECK) || exit 1; \
+	$(FEATCHECK)
 
 webpatch-fixtures:
 	@if [ ! -d $(WEBPATCH_FIXTURES) ] || [ ! -f dylib/tests/gatecheck.c ]; then \
@@ -387,6 +432,7 @@ panel-behavior:
 	node $(PANEL_TESTS)/localization.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/fex.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/prefix-row.js $(OUT_DIR)/panel-emit && \
+	node $(PANEL_TESTS)/defaults.js $(OUT_DIR)/panel-emit && \
 	echo "==> panel behavior: renders as expected, no stale arguments"
 
 CX_ROOT ?= /Applications/CrossOver Preview.app

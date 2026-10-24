@@ -15,7 +15,12 @@ const expand = (s, caps) => s.replace(/[\u0001-\u0008\u0013-\u0016]/g, c => {
 
 const mk = (type, props) => ({ type, props });
 const react = { jsx: mk, jsxs: mk, Fragment: 'Fragment' };
-const barrel = { XY: 'Section', m: 'Dropdown', Yh: 'Toggle' };
+const STUB_TYPES = { XY: 'Section', m: 'Dropdown', Yh: 'Toggle', $n: 'Button', Vb: 'FieldDropdown', D0: 'Field' };
+const barrelFor = emit => Object.fromEntries(
+  execFileSync(emit, ['barrel-names'], { encoding: 'utf8' }).trim().split('\n').map(n => {
+    if (!(n in STUB_TYPES)) throw new Error('the page takes ' + n + ' from Steam and the harness has no stub');
+    return [n, STUB_TYPES[n]];
+  }));
 
 // The two shapes take the payload in different forms and bind different names, which
 // is the whole of the difference between them.
