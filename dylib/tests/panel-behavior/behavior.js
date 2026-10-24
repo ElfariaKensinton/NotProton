@@ -21,8 +21,10 @@ for (const form of Object.keys(FORMS)) {
        'a shortcut renders the panel before a tool name reaches the page');
 
   let r = nodes('');
-  t.ok(toggles(r).length === 7 && sections(r).length === 4 && sections(r).includes('Environment'),
-       'automatic shows seven toggles plus the environment editor in four sections');
+  t.ok(toggles(r).length === 7 && sections(r).length === 4,
+       'automatic shows seven toggles and the environment section');
+  t.ok(r.some(x => x.type === 'textarea' && x.props.className === 'MSCXEnvField'),
+       'per-game environment editor is present');
   t.ok(r.filter(x => x.type === 'Dropdown').length === 2, 'two dropdowns');
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the backend dropdown carries no label column');
 

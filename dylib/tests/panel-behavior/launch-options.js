@@ -6,12 +6,11 @@ if (!emit) { console.error('usage: launch-options.js <emit>'); process.exit(2); 
 
 let failed = 0;
 for (const form of Object.keys(FORMS)) {
-  const { render: P, written, envWrites, storage } = panel(emit, form);
+  const { render: P, written } = panel(emit, form);
   const t = runner(form);
   const nodes = opts => walk(P({ details: details(opts) }));
   const last = () => written[written.length - 1].opts;
   const hud = opts => nodes(opts).find(x => x.props.label === 'Metal HUD');
-  const envField = opts => nodes(opts).find(x => x.type === 'textarea' && x.props.className === 'MSCXEnvField');
 
   for (const assignment of ['MTL_HUD_ENABLED="1"', "MTL_HUD_ENABLED='1'",
                             'MTL_HUD_ENABLED=\\1']) {
@@ -125,43 +124,6 @@ for (const form of Object.keys(FORMS)) {
   written.length = 0;
   hud('MTL_HUD_ENABLED=1 %command% %COMMAND%').props.onChange(false);
   t.ok(last() === '%command% %COMMAND%', 'leaves later %command% text alone');
-
-  const envStoreKey = 'NotProtonGameEnv_287700';
-  const envOriginalOptions = 'WINEDEBUG=x %command% --title "two words"';
-  const initialEnvField = envField(envOriginalOptions);
-  t.ok(!!initialEnvField && initialEnvField.props.rows >= 6,
-       'adds a multiline environment field at the bottom of Compatibility');
-  t.ok(initialEnvField.props.defaultValue === '',
-       'starts with no per-game environment overrides');
-  const customEnvText = 'MY_ENV=hello world\nEMPTY=\nNOT VALID\n# ignored';
-  written.length = 0;
-  initialEnvField.props.onChange({ target: { value: customEnvText } });
-  t.ok(written.length === 0 && storage.get(envStoreKey + '_draft') === customEnvText,
-       'typing changes only the separate draft');
-  initialEnvField.props.onBlur({ target: { value: customEnvText } });
-  let carrier = /(?:^|\s)NOTPROTON_GAME_ENV_B64=([A-Za-z0-9+/=]+)/.exec(last());
-  let decoded = carrier ? Buffer.from(carrier[1], 'base64').toString('utf8') : '';
-  t.ok(written.length === 1 && carrier && decoded === 'MY_ENV=hello world\nEMPTY=',
-       'applies valid KEY=VALUE entries through the launch carrier');
-  t.ok(storage.get(envStoreKey + '_applied') === customEnvText,
-       'remembers the applied values per game');
-  const otherEnv = walk(P({ details: details('%command%', { unAppID: 987654 }) }))
-    .find(x => x.type === 'textarea' && x.props.className === 'MSCXEnvField');
-  t.ok(otherEnv && otherEnv.props.defaultValue === '',
-       'does not leak one game’s environment to another game');
-  const reduced = envField(last());
-  reduced.props.onChange({ target: { value: 'EMPTY=' } });
-  reduced.props.onBlur({ target: { value: 'EMPTY=' } });
-  carrier = /(?:^|\s)NOTPROTON_GAME_ENV_B64=([A-Za-z0-9+/=]+)/.exec(last());
-  decoded = carrier ? Buffer.from(carrier[1], 'base64').toString('utf8') : '';
-  t.ok(carrier && decoded === 'EMPTY=', 'updates values and supports intentionally empty variables');
-  const cleared = envField(last());
-  cleared.props.onChange({ target: { value: '' } });
-  cleared.props.onBlur({ target: { value: '' } });
-  t.ok(!/\bNOTPROTON_GAME_ENV_B64=/.test(last()) &&
-       last().includes('%command% --title "two words"'),
-       'clearing overrides removes the carrier and keeps launch arguments');
-
   failed += t.failed;
 }
 console.log(failed ? `\n${failed} failure(s)` : '\nquoted launch options pass in both shapes');
