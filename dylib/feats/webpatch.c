@@ -868,8 +868,24 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "children:MSCXFeat.filter(f=>!f.dep||on1(f.dep)).map(P)},\"dev\"):null" \
     "]})})}"
 
+#define NP_CX_OPTIONS_BODY(RT, BARREL) \
+    "np=>{" \
+    "const t=np.details,o=t.strLaunchOptions||\"\",tn=t.strCompatToolName||\"" NP_FALLBACK_TOOL "\"," \
+    "fex=" NP_FEX_TOOLS ".indexOf(tn)>=0," \
+    "L=MSCXLaunch(o,t.unAppID),g=L.g,has=k=>L.k.includes(k)," \
+    "lost=globalThis.MSCXDefaultsLost,DF=lost?{}:(" NP_CX_BUILDS ".find(x=>x.id===tn)||{}).override||" NP_CX_DEFAULTS "[fex?\"fex\":\"rosetta\"]||{}," \
+    "fk=" NP_CX_FACTOR_ENTRY "," \
+    "own=g(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
+    "G=k=>\"DXMT_CONFIG\"===k?(own.some(fk)?g(k):DF[k]||\"\"):has(k)?g(k):DF[k]||\"\";" \
+    "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
+    "&&!t.strCompatToolName)return null;" \
+    "return MSCXPanel({fex,get:G,saved:g,set:L.s,clearUnused:1,dev:1,dflt:lost?null:k=>DF[k],head:" \
+    "typeof MSCXPrefixRow==\"function\"&&(0," RT ".jsx)(\"div\",{className:\"MSCXRow\",ref:e=>e&&MSCXPrefixRow(e,t.unAppID)},\"npstate\")" \
+    "})}"
+
+
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \
-    "((npReact,npUI)=>{const _o=" NP_CX_OPTIONS_BODY("np", "npReact()", "npUI()") ";" \
+    "((npReact,npUI)=>{const _o=" NP_CX_OPTIONS_BODY("npReact()", "npUI()") ";" \
     "return np=>{" \
     "const r=_o(np);if(!r)return null;" \
     "const t=np.details,o=t.strLaunchOptions||\"\"," \
@@ -899,10 +915,59 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "return(0,npReact().jsx)(\"div\",{className:\"MSCXPanel\",children:(0,npReact().jsxs)(npReact().Fragment,{children:r.props.children.props.children.concat([envSection])})})" \
     "}})(()=>" RT ",()=>" BARREL ")"
 
+#define NP_CX_DEFAULTS_PAGE_BODY(RT, BARREL) \
+    "(()=>{let Q=Promise.resolve(),gen=0,warned=0,lost=0;" \
+    "const ser=d=>Object.keys(d).map(k=>k+\"=\"+d[k]).join(\"\\n\"),I=()=>{" \
+    "const use=globalThis.MSCXUseState,eff=globalThis.MSCXUseEffect,send=globalThis.MSCXSpecifyRoute;" \
+    "const BL=" NP_CX_BUILDS ",only=BL.length&&BL.every(x=>x.runner===BL[0].runner)?BL[0].runner:\"\"," \
+    "d0=BL.find(x=>x.id===globalThis.MSCXDefaultTool)||BL[0]," \
+    "[r,sr]=use(d0&&\"fex\"===d0.runner?1:0),[id,si]=use(d0?d0.id:\"\"),[,bump]=use(0),[ok,sok]=use(\"\"),all=" NP_CX_DEFAULTS "," \
+    "fex=1===r,n=fex?\"fex\":\"rosetta\",b=BL.find(x=>x.id===id)," \
+    "set=(nn,c)=>c?c.override||all[nn]||{}:all[nn]||{},DF=set(n,b),G=k=>DF[k]||\"\"," \
+    "q=f=>{Q=Q.then(f).catch(e=>console.error(\"NotProton: the defaults were not saved\",e))}," \
+    "clr=()=>{gen++;sok(\"\")}," \
+    "done=(x,f)=>{if(x.BSuccess()){f();bump(c=>c+1);return 1}" \
+    "console.error(\"NotProton: the defaults were not saved, result \"+x.GetEResult());return 0}," \
+    "put=(rv,nn,c,d)=>(c?send(\"NotProton.SetToolDefaults#1\",0,c.id+\"\\n\"+ser(d))" \
+    ":send(\"NotProton.SetDefaults#1\",rv,ser(d))).then(x=>done(x,()=>{c?c.override=d:all[nn]=d}))," \
+    "s=ps=>{const rv=r,nn=n,c=b;clr();q(()=>{const d=Object.assign({},set(nn,c));" \
+    "ps.forEach(p=>{p[1]&&\"auto\"!==p[1]?d[p[0]]=p[1]:delete d[p[0]]});return put(rv,nn,c,d)})}," \
+    "kind=only===n?\"CrossOver\":fex?\"FEX\":\"Rosetta\"," \
+    "apply=()=>{const nn=n,c=b,kk=kind;clr();const my=gen;" \
+    "q(()=>{const d=Object.assign({},c.override||all[nn]||{});" \
+    "return send(\"NotProton.ApplyToolDefaults#1\",0,c.id).then(x=>{" \
+    "if(" NP_STR(NP_COMPATSVC_PARTLY_APPLIED) "===x.GetEResult()){all[nn]=d;lost=1;globalThis.MSCXDefaultsLost=1;bump(c=>c+1);console.error(\"NotProton: Apply left some versions " \
+    "with their own settings, so Default Compatibility Settings are hidden until Steam restarts\");return}" \
+    "done(x,()=>{all[nn]=d;BL.forEach(y=>{y.runner===nn&&(y.override=null)})})" \
+    "&&my===gen&&sok(\"Applied. Every \"+kk+\" Compatibility Tool now uses these settings.\")})})}," \
+    "pickTool=t=>{const p=BL.find(x=>x.id===t);if(p){si(p.id);sr(\"fex\"===p.runner?1:0);clr()}}," \
+    "btn=(k,l,t,f,dsc)=>(0," RT ".jsx)(" BARREL ".D0,{label:l,description:dsc," \
+    "childrenContainerWidth:\"min\",children:(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXSetBtn\"," \
+    "onClick:f,children:t})},k);" \
+    "eff(()=>{const on=e=>pickTool(e.detail);globalThis.addEventListener?.(\"mscxdefaulttool\",on);" \
+    "return()=>globalThis.removeEventListener?.(\"mscxdefaulttool\",on)},[]);if(lost)return null;" \
+    "return MSCXPanel({fex,get:G,saved:G,set:s,head:(0," RT ".jsxs)(" BARREL ".XY,{label:\"Default Compatibility Settings\",children:[" \
+    "BL.length?(0," RT ".jsx)(" BARREL ".Vb,{label:\"CrossOver version\"," \
+    "bMatchWidth:!1,rgOptions:BL.map(x=>({data:x.id,label:x.label}))," \
+    "selectedOption:b?b.id:\"\",onChange:v=>{const p=BL.find(x=>x.id===v.data);if(!p)return;" \
+    "si(p.id);sr(p.runner===\"fex\"?1:0);clr()}},\"version\"):null," \
+    "b?btn(\"apply\",\"Apply as defaults for all \"+kind+\" Compatibility Tools\",\"Apply\",apply,ok||void 0):null" \
+    "]},\"defaults\")})};" \
+    "return()=>{const up=typeof globalThis.MSCXUseState==\"function\"&&typeof globalThis.MSCXUseEffect==\"function\"" \
+    "&&typeof globalThis.MSCXSpecifyRoute==\"function\";" \
+"const dd=" NP_CX_DEFAULTS ";if(null===dd.rosetta||null===dd.fex){" \
+    "warned||(warned=1,console.error(\"NotProton: the saved defaults could not be read, so Default Compatibility Settings are hidden\"));" \
+    "return null}" \
+    "if(up&&" NP_CX_BARREL_READY(BARREL) ")return(0," RT ".jsx)(I,{});" \
+    "up&&!warned&&(warned=1,console.error(\"NotProton: Steam renamed its settings components, so Default Compatibility Settings are hidden\"));" \
+    "return null}})()"
+#define NP_CX_CAPTURE(BODY, RT, BARREL) \
+    "((npReact,npUI)=>" BODY("npReact()", "npUI()") ")(()=>" RT ",()=>" BARREL ")"
+
 #define NP_CX_OPTIONS_COMPONENT \
     "MSCXLaunch=" NP_CX_LAUNCH ",MSCXPick=" NP_CX_PICK "," \
     "MSCXPanel=" NP_CX_CAPTURE(NP_CX_PANEL, NP_C4, NP_C5) "," \
-    "MSCXOpts=" NP_CX_CAPTURE(NP_CX_OPTIONS_BODY, NP_C4, NP_C5) ","
+    "MSCXOpts=" NP_CX_OPTIONS_CAPTURE(NP_C4, NP_C5) ","
 
 // Valve is testing a new compatibility page UI, this logic relates to supporting that
 #define NP_CX_OPTIONS_STATEMENT \
@@ -910,7 +975,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "var MSCXPick=" NP_CX_PICK ";" \
     "var MSCXToolQuery=" NP_CX_TOOL_QUERY ";" \
     "var MSCXPanel=" NP_CX_CAPTURE(NP_CX_PANEL, NP_C3, NP_C4) ";" \
-    "var MSCXOpts=" NP_CX_CAPTURE(NP_CX_OPTIONS_BODY, NP_C3, NP_C4) ";" \
+    "var MSCXOpts=" NP_CX_OPTIONS_CAPTURE(NP_C3, NP_C4) ";" \
     "var MSCXDefaultsPage=" NP_CX_CAPTURE(NP_CX_DEFAULTS_PAGE_BODY, NP_C3, NP_C4) ";"
 
 // 1.0.x saved CrossOver settings without %command%, this migrates them.
